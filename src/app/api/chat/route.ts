@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: "openai/gpt-5.4",
+    model: "anthropic/claude-sonnet-4.6",
     system: `You are a Clinical Intelligence Agent powered by MuleSoft integration APIs.
 You have access to patient data from TWO separate EHR systems — CareStack and Meditab —
 connected through MuleSoft's healthcare integration layer.
