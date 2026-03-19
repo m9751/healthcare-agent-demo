@@ -5,10 +5,10 @@ import { DefaultChatTransport } from "ai";
 import { useRef, useEffect, useState } from "react";
 
 const SUGGESTED_QUERIES = [
-  "Show me all patients across both EHR systems",
+  "Discover FHIR server capabilities",
+  "Show me all patients across both FHIR servers",
   "Which patients have diabetes but no recent A1c test?",
   "Find all high-risk patients who need attention",
-  "What conditions does Maria Gonzalez have?",
   "Compare lab results across CareStack and Meditab",
 ];
 
@@ -17,10 +17,18 @@ export default function HealthcareAgentDemo() {
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
   const [input, setInput] = useState("");
+  const [serverStatus, setServerStatus] = useState<Record<string, { status: string }>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const isLoading = status === "streaming" || status === "submitted";
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((data) => setServerStatus(data))
+      .catch(() => setServerStatus({ carestack: { status: "error" }, meditab: { status: "error" } }));
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -95,12 +103,12 @@ export default function HealthcareAgentDemo() {
               fontFamily: "system-ui, -apple-system, sans-serif",
             }}
           >
-            Powered by MuleSoft API-Led Connectivity &bull; CareStack + Meditab
+            Powered by MuleSoft + SMART on FHIR R4 &bull; CareStack + Meditab
           </p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-          <StatusBadge label="CareStack" />
-          <StatusBadge label="Meditab" />
+          <StatusBadge label="CareStack" serverStatus={serverStatus.carestack?.status} />
+          <StatusBadge label="Meditab" serverStatus={serverStatus.meditab?.status} />
         </div>
       </header>
 
@@ -203,7 +211,15 @@ export default function HealthcareAgentDemo() {
 
 // ─── Sub-components ────────────────────────────────────────────────
 
-function StatusBadge({ label }: { label: string }) {
+function StatusBadge({ label, serverStatus }: { label: string; serverStatus?: string }) {
+  const colorMap: Record<string, { bg: string; color: string; border: string; text: string }> = {
+    connected: { bg: "rgba(34, 197, 94, 0.15)", color: "#22c55e", border: "rgba(34, 197, 94, 0.3)", text: "FHIR R4" },
+    mock: { bg: "rgba(234, 179, 8, 0.15)", color: "#eab308", border: "rgba(234, 179, 8, 0.3)", text: "Mock" },
+    unreachable: { bg: "rgba(239, 68, 68, 0.15)", color: "#ef4444", border: "rgba(239, 68, 68, 0.3)", text: "Offline" },
+    error: { bg: "rgba(239, 68, 68, 0.15)", color: "#ef4444", border: "rgba(239, 68, 68, 0.3)", text: "Error" },
+  };
+  const s = colorMap[serverStatus || ""] || { bg: "rgba(100, 116, 139, 0.15)", color: "#64748b", border: "rgba(100, 116, 139, 0.3)", text: "..." };
+
   return (
     <span
       style={{
@@ -211,13 +227,13 @@ function StatusBadge({ label }: { label: string }) {
         borderRadius: "20px",
         fontSize: "11px",
         fontWeight: 600,
-        background: "rgba(34, 197, 94, 0.15)",
-        color: "#22c55e",
-        border: "1px solid rgba(34, 197, 94, 0.3)",
+        background: s.bg,
+        color: s.color,
+        border: `1px solid ${s.border}`,
         fontFamily: "system-ui, -apple-system, sans-serif",
       }}
     >
-      {label} Connected
+      {label} {s.text}
     </span>
   );
 }
@@ -262,8 +278,8 @@ function EmptyState({ onSuggestion }: { onSuggestion: (q: string) => void }) {
           fontFamily: "system-ui, -apple-system, sans-serif",
         }}
       >
-        Query patient data across CareStack and Meditab simultaneously.
-        MuleSoft APIs normalize and federate FHIR data from both systems.
+        Query real FHIR R4 patient data across CareStack and Meditab via SMART on FHIR.
+        MuleSoft discovers, authenticates, and federates data from both EHR systems.
       </p>
       <div
         style={{
@@ -382,12 +398,13 @@ function MessageBubble({
 
 function ToolCallIndicator({ toolName, state }: { toolName: string; state: string }) {
   const toolLabels: Record<string, string> = {
-    listAllPatients: "Querying patient registry",
-    getPatientConditions: "Fetching diagnoses",
+    listAllPatients: "Querying FHIR patient registry",
+    getPatientConditions: "Fetching FHIR conditions",
     searchConditions: "Searching conditions across EHRs",
-    getPatientLabs: "Retrieving lab results",
-    searchLabResults: "Searching lab data",
-    identifyCareGaps: "Analyzing care gaps",
+    getPatientLabs: "Retrieving FHIR lab results",
+    searchLabResults: "Searching FHIR lab data",
+    identifyCareGaps: "Analyzing care gaps across EHRs",
+    discoverFhirServer: "Discovering FHIR server capabilities",
   };
 
   const isComplete = state === "output-available";

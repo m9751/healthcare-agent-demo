@@ -8,7 +8,8 @@ import {
   getLabResultsForPatient,
   getLabResultsByCode,
   findCareGaps,
-} from "@/lib/mock-data";
+  discoverServer,
+} from "@/lib/fhir-client";
 
 export const maxDuration = 30;
 
@@ -26,12 +27,15 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: "anthropic/claude-sonnet-4.6",
-    system: `You are a Clinical Intelligence Agent powered by MuleSoft integration APIs.
-You have access to patient data from TWO separate EHR systems — CareStack and Meditab —
-connected through MuleSoft's healthcare integration layer.
+    system: `You are a Clinical Intelligence Agent powered by MuleSoft + SMART on FHIR.
+You query real FHIR R4 servers — CareStack and Meditab — through MuleSoft's API-led connectivity layer.
+
+MuleSoft handles FHIR server discovery (CapabilityStatement), authentication, data normalization,
+and cross-system federation. You never touch the FHIR servers directly — MuleSoft is the integration fabric.
 
 Your job is to help clinicians and health system leaders:
-- Query patient data across both EHR systems simultaneously
+- Query patient data across both EHR systems simultaneously via FHIR R4 APIs
+- Discover FHIR server capabilities (use the discoverFhirServer tool)
 - Identify care gaps (e.g., diabetic patients missing A1c tests)
 - Find high-risk patients who need attention
 - Provide clinical summaries with data from multiple sources
@@ -42,9 +46,11 @@ When answering questions:
 3. Use the tools available to query both systems — don't guess at data
 4. Present results in clear, organized tables when showing multiple patients
 5. Highlight risk levels using clear language (HIGH / MEDIUM / LOW)
+6. Note that this data comes from synthetic FHIR patients (Synthea) via the SMART Health IT sandbox
 
 Remember: This is a unified view made possible by MuleSoft's API-led connectivity.
-Without integration, these two EHR systems would be data silos.`,
+Without integration, these two EHR systems would be data silos. MuleSoft normalizes
+SNOMED codes, handles FHIR pagination, and presents a unified patient view to this agent.`,
     messages,
     stopWhen: stepCountIs(8),
     tools: {
@@ -84,14 +90,14 @@ Without integration, these two EHR systems would be data silos.`,
           icd10Code: z.string().describe("ICD-10 diagnosis code (e.g., E11.9 for Type 2 Diabetes)"),
         }),
         execute: async ({ icd10Code }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/conditions?code=${icd10Code}`)
-          const matchingConditions = getConditionsByCode(icd10Code);
+          const matchingConditions = await getConditionsByCode(icd10Code);
           const patientIds = [...new Set(matchingConditions.map((c) => c.patientId))];
-          const patients = getAllPatients().filter((p) => patientIds.includes(p.id));
+          const patients = await getAllPatients();
+          const matched = patients.filter((p) => patientIds.includes(p.id));
           return {
             conditionCode: icd10Code,
-            totalPatients: patients.length,
-            patients: patients.map((p) => ({
+            totalPatients: matched.length,
+            patients: matched.map((p) => ({
               ...p,
               condition: matchingConditions.find((c) => c.patientId === p.id),
             })),
@@ -133,8 +139,21 @@ Without integration, these two EHR systems would be data silos.`,
             .describe("Type of care gap to check. Currently supports diabetes A1c gaps."),
         }),
         execute: async () => {
-          // In production: fetch(`${MULESOFT_BASE}/api/care-gaps`)
           return findCareGaps();
+        },
+      }),
+
+      discoverFhirServer: tool({
+        description:
+          "Discover FHIR server capabilities via CapabilityStatement (SMART on FHIR auto-discovery). Shows server software, FHIR version, and supported clinical resource types. Demonstrates how MuleSoft auto-discovers any FHIR-compliant EHR.",
+        inputSchema: z.object({
+          server: z
+            .enum(["CareStack", "Meditab", "both"])
+            .optional()
+            .describe("Which EHR server to discover. Defaults to both."),
+        }),
+        execute: async ({ server }) => {
+          return discoverServer(server || "both");
         },
       }),
     },
