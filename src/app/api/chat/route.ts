@@ -11,7 +11,7 @@ import {
   getAllergiesForPatient,
   findCareGaps,
   discoverServer,
-} from "@/lib/fhir-client";
+} from "@/lib/experience-api/agent-tools";
 
 export const maxDuration = 30;
 
