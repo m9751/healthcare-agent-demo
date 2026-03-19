@@ -158,6 +158,43 @@ export const labResults = [
   { patientId: "mt-004", code: "2093-3", display: "Total Cholesterol", value: 198, unit: "mg/dL", date: "2025-08-20", source: "Meditab" },
 ];
 
+// ─── Medications (MedicationRequest) ──────────────────────────────
+export const medications = [
+  // CareStack patients
+  { patientId: "cs-001", name: "Metformin 500mg", code: "860975", status: "active", dosage: "500mg twice daily", dateWritten: "2025-01-15", source: "CareStack" },
+  { patientId: "cs-001", name: "Lisinopril 10mg", code: "314076", status: "active", dosage: "10mg once daily", dateWritten: "2024-06-01", source: "CareStack" },
+  { patientId: "cs-002", name: "Metformin 1000mg", code: "861004", status: "active", dosage: "1000mg twice daily", dateWritten: "2025-03-10", source: "CareStack" },
+  { patientId: "cs-004", name: "Insulin Glargine", code: "311027", status: "active", dosage: "20 units at bedtime", dateWritten: "2025-06-01", source: "CareStack" },
+  { patientId: "cs-004", name: "Amlodipine 5mg", code: "329526", status: "active", dosage: "5mg once daily", dateWritten: "2024-11-30", source: "CareStack" },
+  { patientId: "cs-005", name: "Sertraline 50mg", code: "312938", status: "active", dosage: "50mg once daily", dateWritten: "2025-05-20", source: "CareStack" },
+
+  // Meditab patients
+  { patientId: "mt-001", name: "Glipizide 5mg", code: "310488", status: "active", dosage: "5mg before breakfast", dateWritten: "2025-02-22", source: "Meditab" },
+  { patientId: "mt-001", name: "Atorvastatin 40mg", code: "259255", status: "active", dosage: "40mg at bedtime", dateWritten: "2025-01-15", source: "Meditab" },
+  { patientId: "mt-003", name: "Metformin 500mg", code: "860975", status: "active", dosage: "500mg twice daily", dateWritten: "2024-06-05", source: "Meditab" },
+  { patientId: "mt-003", name: "Losartan 50mg", code: "979480", status: "active", dosage: "50mg once daily", dateWritten: "2024-09-12", source: "Meditab" },
+  { patientId: "mt-004", name: "Insulin Lispro", code: "311034", status: "active", dosage: "10 units before meals", dateWritten: "2025-04-30", source: "Meditab" },
+  { patientId: "mt-004", name: "Furosemide 40mg", code: "310429", status: "active", dosage: "40mg once daily", dateWritten: "2025-01-05", source: "Meditab" },
+  { patientId: "mt-005", name: "Tiotropium 18mcg", code: "1658634", status: "active", dosage: "18mcg inhaled once daily", dateWritten: "2024-11-20", source: "Meditab" },
+];
+
+// ─── Allergies (AllergyIntolerance) ───────────────────────────────
+export const allergies = [
+  // CareStack patients
+  { patientId: "cs-001", substance: "Penicillin", category: "medication", criticality: "high", status: "active", reaction: "Anaphylaxis", recordedDate: "2010-03-15", source: "CareStack" },
+  { patientId: "cs-002", substance: "Sulfonamides", category: "medication", criticality: "low", status: "active", reaction: "Rash", recordedDate: "2018-08-05", source: "CareStack" },
+  { patientId: "cs-003", substance: "Latex", category: "environment", criticality: "high", status: "active", reaction: "Urticaria", recordedDate: "2015-11-22", source: "CareStack" },
+  { patientId: "cs-004", substance: "Codeine", category: "medication", criticality: "high", status: "active", reaction: "Respiratory distress", recordedDate: "2012-01-30", source: "CareStack" },
+  { patientId: "cs-004", substance: "Shellfish", category: "food", criticality: "low", status: "active", reaction: "Nausea", recordedDate: "2020-02-14", source: "CareStack" },
+
+  // Meditab patients
+  { patientId: "mt-001", substance: "Aspirin", category: "medication", criticality: "low", status: "active", reaction: "GI upset", recordedDate: "2016-04-18", source: "Meditab" },
+  { patientId: "mt-002", substance: "Peanuts", category: "food", criticality: "high", status: "active", reaction: "Anaphylaxis", recordedDate: "2008-09-03", source: "Meditab" },
+  { patientId: "mt-003", substance: "ACE Inhibitors", category: "medication", criticality: "high", status: "active", reaction: "Angioedema", recordedDate: "2019-12-10", source: "Meditab" },
+  { patientId: "mt-004", substance: "Contrast Dye", category: "medication", criticality: "high", status: "active", reaction: "Anaphylactoid reaction", recordedDate: "2021-07-25", source: "Meditab" },
+  { patientId: "mt-005", substance: "No Known Allergies", category: "medication", criticality: "low", status: "active", reaction: "None", recordedDate: "2019-11-20", source: "Meditab" },
+];
+
 // ─── Helper functions (simulate MuleSoft API calls) ────────────────
 
 export function getAllPatients() {
@@ -182,6 +219,14 @@ export function getLabResultsForPatient(patientId: string) {
 
 export function getLabResultsByCode(loincCode: string) {
   return labResults.filter((l) => l.code === loincCode);
+}
+
+export function getMedicationsForPatient(patientId: string) {
+  return medications.filter((m) => m.patientId === patientId);
+}
+
+export function getAllergiesForPatient(patientId: string) {
+  return allergies.filter((a) => a.patientId === patientId);
 }
 
 export function findCareGaps() {

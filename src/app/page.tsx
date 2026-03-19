@@ -8,8 +8,9 @@ const SUGGESTED_QUERIES = [
   "Discover FHIR server capabilities",
   "Show me all patients across both FHIR servers",
   "Which patients have diabetes but no recent A1c test?",
+  "Review medications and allergies for patient cs-001",
   "Find all high-risk patients who need attention",
-  "Compare lab results across CareStack and Meditab",
+  "What medications is patient mt-004 on? Any interaction concerns?",
 ];
 
 export default function HealthcareAgentDemo() {
@@ -403,6 +404,8 @@ function ToolCallIndicator({ toolName, state }: { toolName: string; state: strin
     searchConditions: "Searching conditions across EHRs",
     getPatientLabs: "Retrieving FHIR lab results",
     searchLabResults: "Searching FHIR lab data",
+    getPatientMedications: "Fetching FHIR medication requests",
+    getPatientAllergies: "Checking FHIR allergy records",
     identifyCareGaps: "Analyzing care gaps across EHRs",
     discoverFhirServer: "Discovering FHIR server capabilities",
   };

@@ -60,6 +60,45 @@ export interface FhirObservation {
   }>;
 }
 
+// ─── FHIR MedicationRequest ─────────────────────────────────────
+export interface FhirMedicationRequest {
+  resourceType: "MedicationRequest";
+  id: string;
+  subject?: { reference?: string };
+  medicationCodeableConcept?: {
+    coding?: Array<{ system?: string; code?: string; display?: string }>;
+    text?: string;
+  };
+  status?: string;
+  intent?: string;
+  authoredOn?: string;
+  dosageInstruction?: Array<{ text?: string }>;
+}
+
+// ─── FHIR AllergyIntolerance ────────────────────────────────────
+export interface FhirAllergyIntolerance {
+  resourceType: "AllergyIntolerance";
+  id: string;
+  patient?: { reference?: string };
+  code?: {
+    coding?: Array<{ system?: string; code?: string; display?: string }>;
+    text?: string;
+  };
+  clinicalStatus?: { coding?: Array<{ code?: string }> };
+  verificationStatus?: { coding?: Array<{ code?: string }> };
+  type?: string;
+  category?: string[];
+  criticality?: string;
+  recordedDate?: string;
+  reaction?: Array<{
+    manifestation?: Array<{
+      coding?: Array<{ display?: string }>;
+      text?: string;
+    }>;
+    severity?: string;
+  }>;
+}
+
 // ─── FHIR CapabilityStatement ────────────────────────────────────
 export interface FhirCapabilityStatement {
   resourceType: "CapabilityStatement";
@@ -96,5 +135,26 @@ export interface NormalizedLabResult {
   value: number;
   unit: string;
   date: string;
+  source: string;
+}
+
+export interface NormalizedMedication {
+  patientId: string;
+  name: string;
+  code: string;
+  status: string;
+  dosage: string;
+  dateWritten: string;
+  source: string;
+}
+
+export interface NormalizedAllergy {
+  patientId: string;
+  substance: string;
+  category: string;
+  criticality: string;
+  status: string;
+  reaction: string;
+  recordedDate: string;
   source: string;
 }

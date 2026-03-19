@@ -16,11 +16,15 @@ import type {
   FhirPatient,
   FhirCondition,
   FhirObservation,
+  FhirMedicationRequest,
+  FhirAllergyIntolerance,
   FhirCapabilityStatement,
   FhirServerConfig,
   NormalizedPatient,
   NormalizedCondition,
   NormalizedLabResult,
+  NormalizedMedication,
+  NormalizedAllergy,
 } from "./fhir-types";
 
 import * as mockData from "./mock-data";
@@ -146,6 +150,35 @@ function normalizeLabResult(o: FhirObservation, server: FhirServerConfig, patien
     value: o.valueQuantity?.value ?? 0,
     unit: o.valueQuantity?.unit || "",
     date: o.effectiveDateTime?.slice(0, 10) || "Unknown",
+    source: server.label,
+  };
+}
+
+function normalizeMedication(m: FhirMedicationRequest, server: FhirServerConfig, patientId: string): NormalizedMedication {
+  const coding = m.medicationCodeableConcept?.coding?.[0];
+  return {
+    patientId,
+    name: coding?.display || m.medicationCodeableConcept?.text || "Unknown",
+    code: coding?.code || "Unknown",
+    status: m.status || "unknown",
+    dosage: m.dosageInstruction?.[0]?.text || "Not specified",
+    dateWritten: m.authoredOn?.slice(0, 10) || "Unknown",
+    source: server.label,
+  };
+}
+
+function normalizeAllergy(a: FhirAllergyIntolerance, server: FhirServerConfig, patientId: string): NormalizedAllergy {
+  const coding = a.code?.coding?.[0];
+  const reaction = a.reaction?.[0];
+  const manifestation = reaction?.manifestation?.[0];
+  return {
+    patientId,
+    substance: coding?.display || a.code?.text || "Unknown",
+    category: a.category?.[0] || "unknown",
+    criticality: a.criticality || "unknown",
+    status: a.clinicalStatus?.coding?.[0]?.code || "unknown",
+    reaction: manifestation?.coding?.[0]?.display || manifestation?.text || "Not documented",
+    recordedDate: a.recordedDate?.slice(0, 10) || "Unknown",
     source: server.label,
   };
 }
@@ -412,6 +445,70 @@ export async function findCareGaps() {
     return gaps.length > 0 ? gaps : mockData.findCareGaps();
   } catch {
     return mockData.findCareGaps();
+  }
+}
+
+// ─── Medications ────────────────────────────────────────────────
+
+export async function getMedicationsForPatient(patientId: string): Promise<NormalizedMedication[]> {
+  if (useMock()) return mockData.getMedicationsForPatient(patientId);
+
+  const entry = lookupPatient(patientId);
+  if (!entry) {
+    for (const server of SERVERS) {
+      if (patientId.startsWith(server.prefix)) {
+        const fhirId = patientId.slice(3);
+        const bundle = await fhirFetch<FhirBundle<FhirMedicationRequest>>(
+          server, "/MedicationRequest", { patient: fhirId, _count: "30" }
+        );
+        if (bundle?.entry) {
+          return bundle.entry.map((e) => normalizeMedication(e.resource, server, patientId));
+        }
+      }
+    }
+    return mockData.getMedicationsForPatient(patientId);
+  }
+
+  try {
+    const bundle = await fhirFetch<FhirBundle<FhirMedicationRequest>>(
+      entry.server, "/MedicationRequest", { patient: entry.fhirId, _count: "30" }
+    );
+    if (!bundle?.entry) return [];
+    return bundle.entry.map((e) => normalizeMedication(e.resource, entry.server, patientId));
+  } catch {
+    return mockData.getMedicationsForPatient(patientId);
+  }
+}
+
+// ─── Allergies ──────────────────────────────────────────────────
+
+export async function getAllergiesForPatient(patientId: string): Promise<NormalizedAllergy[]> {
+  if (useMock()) return mockData.getAllergiesForPatient(patientId);
+
+  const entry = lookupPatient(patientId);
+  if (!entry) {
+    for (const server of SERVERS) {
+      if (patientId.startsWith(server.prefix)) {
+        const fhirId = patientId.slice(3);
+        const bundle = await fhirFetch<FhirBundle<FhirAllergyIntolerance>>(
+          server, "/AllergyIntolerance", { patient: fhirId, _count: "30" }
+        );
+        if (bundle?.entry) {
+          return bundle.entry.map((e) => normalizeAllergy(e.resource, server, patientId));
+        }
+      }
+    }
+    return mockData.getAllergiesForPatient(patientId);
+  }
+
+  try {
+    const bundle = await fhirFetch<FhirBundle<FhirAllergyIntolerance>>(
+      entry.server, "/AllergyIntolerance", { patient: entry.fhirId, _count: "30" }
+    );
+    if (!bundle?.entry) return [];
+    return bundle.entry.map((e) => normalizeAllergy(e.resource, entry.server, patientId));
+  } catch {
+    return mockData.getAllergiesForPatient(patientId);
   }
 }
 
