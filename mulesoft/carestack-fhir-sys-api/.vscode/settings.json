@@ -1,0 +1,10 @@
+{
+  "java.completion.enabled": true,
+  "java.debug.settings.enableRunDebugCodeLens": true,
+  "java.test.editor.enableShortcuts": true,
+  "xml.format.splitAttributes": true,
+  "editor.formatOnSave": true,
+  "xml.validation.enabled": true,
+  "mule.validationOnSave": true,
+  "files.autoSave": "afterDelay"
+}

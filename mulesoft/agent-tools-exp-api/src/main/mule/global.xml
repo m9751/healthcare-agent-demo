@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+  <configuration-properties file="config.properties" doc:name="Configuration properties"/>
+
+  <!-- Inbound: receives requests from MCP Server or AI agents -->
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+    <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+  </http:listener-config>
+
+  <!-- Outbound: calls Clinical Federation Process API -->
+  <http:request-config name="Clinical_Federation_PRC_API_config" doc:name="Clinical Federation Process API">
+    <http:request-connection host="${prcapi.clinical.host}" port="${prcapi.clinical.port}" protocol="${prcapi.clinical.protocol}"/>
+  </http:request-config>
+
+</mule>

@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Run Mule Application",
+      "request": "launch",
+      "mainClass": "org.mule.runtime.app.DefaultMuleApplication",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-M-Dmule.home=${workspaceFolder}",
+        "-M-Dmule.base=${workspaceFolder}",
+        "-M-Dmule.apps.dir=${workspaceFolder}/apps",
+        "-M-Dmule.agent.enabled=false",
+        "-M-XX:-UseBiasedLocking",
+        "-M-Dfile.encoding=UTF-8",
+        "-M-XX:+AlwaysPreTouch",
+        "-M-XX:+UseG1GC",
+        "-M-XX:MaxMetaspaceSize=256m",
+        "-M-Djava.net.preferIPv4Stack=true"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns:os="http://www.mulesoft.org/schema/mule/os"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+    http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+  <configuration-properties file="config.properties" doc:name="Configuration properties"/>
+
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+    <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+  </http:listener-config>
+
+  <http:request-config name="CareStack_Sys_API_config" doc:name="CareStack System API">
+    <http:request-connection host="${sysapi.carestack.host}" port="${sysapi.carestack.port}" protocol="${sysapi.carestack.protocol}"/>
+  </http:request-config>
+
+  <http:request-config name="Meditab_Sys_API_config" doc:name="Meditab System API">
+    <http:request-connection host="${sysapi.meditab.host}" port="${sysapi.meditab.port}" protocol="${sysapi.meditab.protocol}"/>
+  </http:request-config>
+
+  <os:object-store name="Patient_Registry" doc:name="Patient Registry"
+    persistent="false" entryTtl="3600" entryTtlUnit="SECONDS" maxEntries="1000"/>
+
+</mule>

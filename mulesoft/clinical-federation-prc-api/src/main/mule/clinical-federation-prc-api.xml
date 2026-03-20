@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns:os="http://www.mulesoft.org/schema/mule/os"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+    http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+  <!-- ============================================================
+       CLINICAL FEDERATION PROCESS API
+       Orchestrates across CareStack + Meditab System APIs.
+       Key MuleSoft patterns: Scatter-Gather, DataWeave, Object Store, Choice Router.
+       Derived from: src/lib/process-api/clinical-federation.ts (510 lines)
+       ============================================================ -->
+
+  <!-- ─── GET /patients — Scatter-Gather Federation ──────────────── -->
+  <!-- TS equivalent: getAllPatients() lines 195-231 -->
+  <!-- This is THE showcase flow: parallel EHR queries + unified response -->
+  <flow name="get-all-patients" doc:name="GET /patients (Federated)">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
+
+    <!-- Scatter-Gather: query both EHR systems in parallel -->
+    <scatter-gather doc:name="Query CareStack + Meditab in parallel">
+      <route>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/patients" doc:name="CareStack GET patients"/>
+      </route>
+      <route>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/patients" doc:name="Meditab GET patients"/>
+      </route>
+    </scatter-gather>
+
+    <!-- DataWeave: merge + normalize both FHIR Bundles into unified patient list -->
+    <!-- TS equivalent: normalizePatient() lines 86-98, registerPatient() lines 76-78 -->
+    <ee:transform doc:name="Normalize + Merge Patients">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+
+// SNOMED-to-ICD-10 mapping table (TS lines 47-62)
+var snomedToIcd10 = {
+  "44054006": { icd10: "E11.9", display: "Type 2 Diabetes Mellitus" },
+  "38341003": { icd10: "I10", display: "Essential Hypertension" },
+  "195967001": { icd10: "J45.909", display: "Asthma, Unspecified" },
+  "431855005": { icd10: "N18.3", display: "Chronic Kidney Disease, Stage 3" },
+  "370143000": { icd10: "F32.1", display: "Major Depressive Disorder" },
+  "55822004": { icd10: "E78.5", display: "Hyperlipidemia" },
+  "84114007": { icd10: "I50.9", display: "Heart Failure, Unspecified" },
+  "13645005": { icd10: "J44.1", display: "COPD with Acute Exacerbation" },
+  "233604007": { icd10: "I25.10", display: "Coronary Artery Disease" },
+  "40930008": { icd10: "I48.91", display: "Atrial Fibrillation" },
+  "73211009": { icd10: "E11.9", display: "Diabetes Mellitus" },
+  "15777000": { icd10: "E11.65", display: "Diabetes with Hyperglycemia" },
+  "46635009": { icd10: "E11.9", display: "Diabetes Mellitus Type 1" },
+  "162864005": { icd10: "R73.09", display: "Prediabetes" }
+}
+
+// Extract FHIR Bundles from Scatter-Gather results
+var csBundle = payload."0".payload
+var mtBundle = payload."1".payload
+
+// Normalize CareStack patients (prefix: cs-)
+var csPatients = if (csBundle.entry != null)
+  (csBundle.entry map (entry) -> {
+    id: "cs-" ++ entry.resource.id[0 to 7],
+    resourceType: "Patient",
+    name: [{
+      given: (entry.resource.name[0].given default ["Unknown"]),
+      family: (entry.resource.name[0].family default "Unknown")
+    }],
+    birthDate: entry.resource.birthDate default "Unknown",
+    gender: entry.resource.gender default "unknown",
+    address: [{
+      city: (entry.resource.address[0].city default "Unknown"),
+      state: (entry.resource.address[0].state default "Unknown")
+    }],
+    source: "CareStack"
+  })
+  else []
+
+// Normalize Meditab patients (prefix: mt-)
+var mtPatients = if (mtBundle.entry != null)
+  (mtBundle.entry map (entry) -> {
+    id: "mt-" ++ entry.resource.id[0 to 7],
+    resourceType: "Patient",
+    name: [{
+      given: (entry.resource.name[0].given default ["Unknown"]),
+      family: (entry.resource.name[0].family default "Unknown")
+    }],
+    birthDate: entry.resource.birthDate default "Unknown",
+    gender: entry.resource.gender default "unknown",
+    address: [{
+      city: (entry.resource.address[0].city default "Unknown"),
+      state: (entry.resource.address[0].state default "Unknown")
+    }],
+    source: "Meditab"
+  })
+  else []
+---
+csPatients ++ mtPatients
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/conditions — Choice Router ───── -->
+  <!-- TS equivalent: getConditionsForPatient() lines 255-268 -->
+  <flow name="get-patient-conditions" doc:name="GET /patients/{patientId}/conditions">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen"/>
+
+    <!-- Choice Router: route by patient ID prefix (cs-* or mt-*) -->
+    <!-- TS equivalent: getSystemForPatient() lines 163-183 -->
+    <choice doc:name="Route by patient prefix">
+      <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/conditions" doc:name="CareStack GET conditions">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/conditions" doc:name="Meditab GET conditions">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+      <otherwise>
+        <ee:transform doc:name="Unknown prefix error">
+          <ee:message>
+            <ee:set-payload><![CDATA[#[output application/json --- {
+              resourceType: "OperationOutcome",
+              issue: [{ severity: "error", code: "not-found", diagnostics: "Unknown patient prefix. Use cs- or mt-" }]
+            }]]]></ee:set-payload>
+            <ee:set-attributes><![CDATA[#[{httpStatus: 404}]]]></ee:set-attributes>
+          </ee:message>
+        </ee:transform>
+      </otherwise>
+    </choice>
+
+    <!-- Normalize conditions: SNOMED → ICD-10 -->
+    <ee:transform doc:name="Normalize Conditions (SNOMED to ICD-10)">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+var snomedToIcd10 = {
+  "44054006": { icd10: "E11.9", display: "Type 2 Diabetes Mellitus" },
+  "38341003": { icd10: "I10", display: "Essential Hypertension" },
+  "195967001": { icd10: "J45.909", display: "Asthma, Unspecified" },
+  "431855005": { icd10: "N18.3", display: "Chronic Kidney Disease, Stage 3" },
+  "370143000": { icd10: "F32.1", display: "Major Depressive Disorder" },
+  "55822004": { icd10: "E78.5", display: "Hyperlipidemia" },
+  "84114007": { icd10: "I50.9", display: "Heart Failure, Unspecified" },
+  "13645005": { icd10: "J44.1", display: "COPD with Acute Exacerbation" },
+  "233604007": { icd10: "I25.10", display: "Coronary Artery Disease" },
+  "40930008": { icd10: "I48.91", display: "Atrial Fibrillation" },
+  "73211009": { icd10: "E11.9", display: "Diabetes Mellitus" },
+  "15777000": { icd10: "E11.65", display: "Diabetes with Hyperglycemia" },
+  "46635009": { icd10: "E11.9", display: "Diabetes Mellitus Type 1" },
+  "162864005": { icd10: "R73.09", display: "Prediabetes" }
+}
+var patientId = attributes.uriParams.patientId
+var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+---
+if (payload.entry != null)
+  (payload.entry map (entry) -> do {
+    var coding = entry.resource.code.coding[0]
+    var snomedCode = coding.code default ""
+    var mapping = snomedToIcd10[snomedCode]
+    ---
+    {
+      patientId: patientId,
+      code: if (mapping != null) mapping.icd10 else snomedCode,
+      display: if (mapping != null) mapping.display else (coding.display default entry.resource.code.text default "Unknown"),
+      onsetDate: (entry.resource.onsetDateTime[0 to 9]) default "Unknown",
+      source: source
+    }
+  })
+else []
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /conditions?code={code} — Scatter-Gather + Normalize ── -->
+  <!-- TS equivalent: getConditionsByCode() lines 270-299 -->
+  <flow name="search-conditions-by-code" doc:name="GET /conditions?code (Federated)">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/conditions" allowedMethods="GET" doc:name="Listen"/>
+
+    <scatter-gather doc:name="Search conditions across both EHRs">
+      <route>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/conditions" doc:name="CareStack search conditions">
+          <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
+        </http:request>
+      </route>
+      <route>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/conditions" doc:name="Meditab search conditions">
+          <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
+        </http:request>
+      </route>
+    </scatter-gather>
+
+    <ee:transform doc:name="Merge + Normalize condition results">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+var csResults = payload."0".payload
+var mtResults = payload."1".payload
+
+fun normalizeEntry(entry, prefix, source) = {
+  patientId: prefix ++ "-" ++ ((entry.resource.subject.reference splitBy "/")[-1])[0 to 7],
+  code: entry.resource.code.coding[0].code default "Unknown",
+  display: entry.resource.code.coding[0].display default entry.resource.code.text default "Unknown",
+  onsetDate: (entry.resource.onsetDateTime[0 to 9]) default "Unknown",
+  source: source
+}
+---
+(if (csResults.entry != null) (csResults.entry map normalizeEntry($, "cs", "CareStack")) else [])
+++
+(if (mtResults.entry != null) (mtResults.entry map normalizeEntry($, "mt", "Meditab")) else [])
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/observations — Choice Router ──── -->
+  <flow name="get-patient-observations" doc:name="GET /patients/{patientId}/observations">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen"/>
+    <choice doc:name="Route by patient prefix">
+      <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/observations" doc:name="CareStack GET observations">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/observations" doc:name="Meditab GET observations">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+    </choice>
+    <ee:transform doc:name="Normalize lab results">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+var patientId = attributes.uriParams.patientId
+var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+---
+if (payload.entry != null)
+  (payload.entry filter ($.resource.valueQuantity.value != null) map (entry) -> {
+    patientId: patientId,
+    code: entry.resource.code.coding[0].code default "Unknown",
+    display: entry.resource.code.coding[0].display default entry.resource.code.text default "Unknown",
+    value: entry.resource.valueQuantity.value,
+    unit: entry.resource.valueQuantity.unit default "",
+    date: (entry.resource.effectiveDateTime[0 to 9]) default "Unknown",
+    source: source
+  })
+else []
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/medications — Choice Router ───── -->
+  <flow name="get-patient-medications" doc:name="GET /patients/{patientId}/medications">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen"/>
+    <choice doc:name="Route by patient prefix">
+      <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/medications" doc:name="CareStack GET medications">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/medications" doc:name="Meditab GET medications">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+    </choice>
+    <ee:transform doc:name="Normalize medications">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+var patientId = attributes.uriParams.patientId
+var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+---
+if (payload.entry != null)
+  (payload.entry map (entry) -> {
+    patientId: patientId,
+    name: entry.resource.medicationCodeableConcept.coding[0].display
+      default entry.resource.medicationCodeableConcept.text default "Unknown",
+    code: entry.resource.medicationCodeableConcept.coding[0].code default "Unknown",
+    status: entry.resource.status default "unknown",
+    dosage: entry.resource.dosageInstruction[0].text default "Not specified",
+    dateWritten: (entry.resource.authoredOn[0 to 9]) default "Unknown",
+    source: source
+  })
+else []
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/allergies — Choice Router ─────── -->
+  <flow name="get-patient-allergies" doc:name="GET /patients/{patientId}/allergies">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen"/>
+    <choice doc:name="Route by patient prefix">
+      <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/allergies" doc:name="CareStack GET allergies">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/allergies" doc:name="Meditab GET allergies">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
+    </choice>
+    <ee:transform doc:name="Normalize allergies">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+var patientId = attributes.uriParams.patientId
+var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+---
+if (payload.entry != null)
+  (payload.entry map (entry) -> {
+    patientId: patientId,
+    substance: entry.resource.code.coding[0].display default entry.resource.code.text default "Unknown",
+    category: entry.resource.category[0] default "unknown",
+    criticality: entry.resource.criticality default "unknown",
+    status: entry.resource.clinicalStatus.coding[0].code default "unknown",
+    reaction: entry.resource.reaction[0].manifestation[0].coding[0].display
+      default entry.resource.reaction[0].manifestation[0].text default "Not documented",
+    recordedDate: (entry.resource.recordedDate[0 to 9]) default "Unknown",
+    source: source
+  })
+else []
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /discover — Federated Server Discovery ─────────────── -->
+  <!-- TS equivalent: discoverServers() lines 438-487 -->
+  <flow name="discover-servers" doc:name="GET /discover">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/discover" allowedMethods="GET" doc:name="Listen"/>
+    <scatter-gather doc:name="Query metadata from both EHRs">
+      <route>
+        <http:request config-ref="CareStack_Sys_API_config" method="GET"
+          path="${sysapi.carestack.basePath}/metadata" doc:name="CareStack metadata"/>
+      </route>
+      <route>
+        <http:request config-ref="Meditab_Sys_API_config" method="GET"
+          path="${sysapi.meditab.basePath}/metadata" doc:name="Meditab metadata"/>
+      </route>
+    </scatter-gather>
+    <ee:transform doc:name="Format server discovery response">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+var csCap = payload."0".payload
+var mtCap = payload."1".payload
+
+fun serverInfo(cap, name) = {
+  name: name,
+  software: cap.software.name default "Unknown",
+  softwareVersion: cap.software.version default "Unknown",
+  fhirVersion: cap.fhirVersion default "Unknown",
+  totalResourceTypes: sizeOf(cap.rest[0].resource default []),
+  status: "connected"
+}
+---
+[serverInfo(csCap, "CareStack"), serverInfo(mtCap, "Meditab")]
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="process-error-handler"/>
+  </flow>
+
+  <!-- ─── Error Handler ──────────────────────────────────────────── -->
+  <error-handler name="process-error-handler">
+    <on-error-propagate type="ANY">
+      <ee:transform doc:name="OperationOutcome error">
+        <ee:message>
+          <ee:set-payload><![CDATA[#[output application/json --- {
+            resourceType: "OperationOutcome",
+            issue: [{
+              severity: "error",
+              code: "exception",
+              diagnostics: "Clinical Federation error: " ++ (error.description default "Unknown error")
+            }]
+          }]]]></ee:set-payload>
+          <ee:set-attributes><![CDATA[#[{httpStatus: 500}]]]></ee:set-attributes>
+        </ee:message>
+      </ee:transform>
+    </on-error-propagate>
+  </error-handler>
+
+</mule>

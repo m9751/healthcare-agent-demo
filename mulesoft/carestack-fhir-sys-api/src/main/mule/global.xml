@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+  <!-- Configuration Properties -->
+  <configuration-properties file="config.properties" doc:name="Configuration properties"/>
+
+  <!-- HTTP Listener (inbound — receives requests from Process API) -->
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+    <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+  </http:listener-config>
+
+  <!-- HTTP Request (outbound — calls CareStack FHIR R4 server) -->
+  <http:request-config name="FHIR_CareStack_Request_config" doc:name="FHIR CareStack Request config">
+    <http:request-connection host="${fhir.carestack.host}" port="${fhir.carestack.port}" protocol="HTTPS">
+      <http:default-headers>
+        <http:default-header key="Accept" value="application/fhir+json"/>
+      </http:default-headers>
+    </http:request-connection>
+  </http:request-config>
+
+</mule>

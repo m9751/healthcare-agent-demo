@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+  <!-- ============================================================
+       AGENT TOOLS EXPERIENCE API
+       Thin routing layer between AI agents and the Process API.
+       Each flow = one agent tool. Minimal logic — just routing.
+       In Phase 3: each flow becomes an Agentforce Action.
+       Derived from: src/lib/experience-api/agent-tools.ts
+       ============================================================ -->
+
+  <!-- Tool: listAllPatients -->
+  <flow name="list-all-patients" doc:name="GET /agent/patients">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/patients" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients" doc:name="Process API → patients"/>
+  </flow>
+
+  <!-- Tool: getPatientConditions -->
+  <flow name="get-patient-conditions" doc:name="GET /agent/patients/{patientId}/conditions">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/conditions" doc:name="Process API → conditions">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.uriParams.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: searchConditions -->
+  <flow name="search-conditions" doc:name="GET /agent/conditions?code">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/conditions" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/conditions" doc:name="Process API → search conditions">
+      <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: getPatientLabs -->
+  <flow name="get-patient-labs" doc:name="GET /agent/patients/{patientId}/observations">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/observations" doc:name="Process API → labs">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.uriParams.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: getPatientMedications -->
+  <flow name="get-patient-medications" doc:name="GET /agent/patients/{patientId}/medications">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/medications" doc:name="Process API → medications">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.uriParams.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: getPatientAllergies -->
+  <flow name="get-patient-allergies" doc:name="GET /agent/patients/{patientId}/allergies">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/allergies" doc:name="Process API → allergies">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.uriParams.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: discoverFhirServer -->
+  <flow name="discover-servers" doc:name="GET /agent/discover">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/discover" allowedMethods="GET" doc:name="Listen"/>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/discover" doc:name="Process API → discover"/>
+  </flow>
+
+  <!-- Tool: healthCheck -->
+  <flow name="health-check" doc:name="GET /agent/health">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/agent/health" allowedMethods="GET" doc:name="Listen"/>
+    <ee:transform doc:name="Health check response">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          status: "healthy",
+          api: "Healthcare Clinical Intelligence Agent Tools",
+          version: "1.0.0",
+          layer: "Experience API",
+          downstream: "Clinical Federation Process API"
+        }]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+</mule>
