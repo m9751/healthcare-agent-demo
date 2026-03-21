@@ -1,4 +1,4 @@
-import { streamText, tool, stepCountIs } from "ai";
+import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
 import { z } from "zod";
 
 export const maxDuration = 30;
@@ -15,6 +15,7 @@ async function anypointGet(path: string): Promise<unknown> {
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
+  const modelMessages = convertToModelMessages(messages);
 
   const result = streamText({
     model: "anthropic/claude-sonnet-4.6",
@@ -53,7 +54,7 @@ When answering questions:
 Remember: This is a unified view made possible by MuleSoft's API-led connectivity.
 Without integration, these two EHR systems would be data silos. MuleSoft normalizes
 SNOMED codes, handles FHIR pagination, and presents a unified patient view to this agent.`,
-    messages,
+    messages: modelMessages,
     stopWhen: stepCountIs(8),
     tools: {
       listAllPatients: tool({
