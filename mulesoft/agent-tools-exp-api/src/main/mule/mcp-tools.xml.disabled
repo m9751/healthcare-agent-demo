@@ -14,7 +14,7 @@
   <!-- MCP Server Configuration — Streamable HTTP transport -->
   <mcp:server name="MCP_Server_config" doc:name="MCP Server config"
     serverName="Healthcare Clinical Intelligence" serverVersion="1.0.0">
-    <mcp:streamable-http-server listenerConfig="MCP_HTTP_Listener_config" mcpEndpointPath="/mcp"/>
+    <mcp:streamable-http-server listenerConfig="HTTP_Listener_config" mcpEndpointPath="/mcp"/>
   </mcp:server>
 
   <!-- ============================================================

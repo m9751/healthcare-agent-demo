@@ -24,6 +24,12 @@
               <version>${mule.maven.plugin.version}</version>
               <extensions>true</extensions>
               <configuration/>
+              <executions>
+                  <execution>
+                      <id>default-process-classes</id>
+                      <phase>none</phase>
+                  </execution>
+              </executions>
           </plugin>
       </plugins>
   </build>
