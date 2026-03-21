@@ -15,7 +15,7 @@ async function anypointGet(path: string): Promise<unknown> {
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
-  const modelMessages = convertToModelMessages(messages);
+  const modelMessages = await convertToModelMessages(messages);
 
   const result = streamText({
     model: "anthropic/claude-sonnet-4.6",
