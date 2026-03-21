@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinical Intelligence Agent — MuleSoft + FHIR R4</title>
+<meta name="description" content="AI-powered clinical intelligence powered by MuleSoft API-led connectivity and SMART on FHIR R4">
+<style>
+:root {
+  --bg: #0a0f1a;
+  --surface: #0d1321;
+  --card: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --accent: #00A1E0;
+  --accent-dark: #0070c9;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Courier New', Courier, monospace;
+  --radius: 12px;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  display: flex;
+  flex-direction: column;
+}
+
+/* — Header — */
+.header {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.header-logo {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #fff;
+}
+
+.header-title { font-size: 16px; font-weight: 600; color: #f1f5f9; }
+.header-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+.header-badges { margin-left: auto; display: flex; gap: 6px; }
+
+.badge {
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 10px; font-weight: 600;
+  background: rgba(34,197,94,0.12); color: var(--green);
+  border: 1px solid rgba(34,197,94,0.25);
+}
+.badge--loading { background: rgba(100,116,139,0.12); color: var(--muted); border-color: rgba(100,116,139,0.25); }
+.badge--error { background: rgba(239,68,68,0.12); color: var(--red); border-color: rgba(239,68,68,0.25); }
+
+/* — Chat area — */
+.chat { flex: 1; overflow-y: auto; padding: 24px; }
+.chat-inner { max-width: 800px; margin: 0 auto; }
+
+/* — Empty state — */
+.empty { text-align: center; padding: 48px 16px; }
+.empty-icon {
+  width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 20px;
+  background: linear-gradient(135deg, rgba(0,161,224,0.1), rgba(0,112,201,0.1));
+  border: 1px solid rgba(0,161,224,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; color: var(--accent);
+}
+.empty h2 { font-size: 20px; color: #f1f5f9; margin-bottom: 8px; }
+.empty p { color: var(--muted); font-size: 13px; max-width: 460px; margin: 0 auto 24px; line-height: 1.5; }
+
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
+.suggestion-btn {
+  padding: 7px 14px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--card);
+  color: #94a3b8; font-size: 12px; cursor: pointer;
+  font-family: var(--sans); transition: border-color 0.15s;
+}
+.suggestion-btn:hover { border-color: var(--accent); color: var(--text); }
+.suggestion-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* — Messages — */
+.msg { margin-bottom: 20px; }
+.msg-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; margin-bottom: 4px;
+}
+.msg-label--user { color: var(--muted); text-align: right; }
+.msg-label--assistant { color: var(--accent); }
+
+.msg-bubble {
+  padding: 12px 16px; border-radius: var(--radius);
+  font-size: 14px; line-height: 1.65; white-space: pre-wrap;
+  word-wrap: break-word; max-width: 85%;
+}
+.msg-bubble--user {
+  background: #1e40af; margin-left: auto; border-bottom-right-radius: 4px;
+}
+.msg-bubble--assistant {
+  background: var(--card); border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.msg-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+
+.tool-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 500;
+}
+.tool-pill--running {
+  background: rgba(0,161,224,0.1); border: 1px solid rgba(0,161,224,0.25); color: var(--accent);
+}
+.tool-pill--done {
+  background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: var(--green);
+}
+
+.thinking {
+  padding: 16px 0; color: var(--muted); font-size: 13px;
+  display: flex; align-items: center; gap: 8px;
+}
+.thinking::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* — Footer / input — */
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 12px 24px; background: var(--surface);
+  flex-shrink: 0;
+}
+.footer-inner {
+  max-width: 800px; margin: 0 auto;
+  display: flex; gap: 10px; align-items: flex-end;
+}
+
+.input-box {
+  flex: 1; padding: 10px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text); font-size: 14px; font-family: var(--sans);
+  resize: none; outline: none; min-height: 42px; max-height: 120px;
+}
+.input-box:focus { border-color: var(--accent); }
+.input-box::placeholder { color: var(--muted); }
+
+.send-btn {
+  padding: 10px 20px; border-radius: var(--radius); border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  font-family: var(--sans); white-space: nowrap;
+}
+.send-btn:disabled {
+  background: var(--border); cursor: not-allowed; opacity: 0.6;
+}
+.send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* — Responsive — */
+@media (max-width: 600px) {
+  .header { padding: 10px 16px; }
+  .chat { padding: 16px; }
+  .footer { padding: 10px 16px; }
+  .header-badges { display: none; }
+  .msg-bubble { max-width: 95%; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-logo" aria-hidden="true">M</div>
+  <div>
+    <div class="header-title">Clinical Intelligence Agent</div>
+    <div class="header-sub">MuleSoft + SMART on FHIR R4 &bull; CareStack + Meditab</div>
+  </div>
+  <div class="header-badges">
+    <span class="badge badge--loading" id="badge-cs">CareStack ...</span>
+    <span class="badge badge--loading" id="badge-mt">Meditab ...</span>
+  </div>
+</header>
+
+<main class="chat" id="chat" role="log" aria-live="polite">
+  <div class="chat-inner" id="chat-inner">
+    <div class="empty" id="empty-state">
+      <div class="empty-icon" aria-hidden="true">+</div>
+      <h1>Unified Clinical Intelligence</h1>
+      <p>Query real FHIR R4 patient data across CareStack and Meditab. MuleSoft federates, normalizes, and presents a unified view for AI-powered clinical decision support.</p>
+      <nav class="suggestions" aria-label="Suggested queries">
+        <button class="suggestion-btn" type="button">Discover FHIR server capabilities</button>
+        <button class="suggestion-btn" type="button">Show me all patients across both FHIR servers</button>
+        <button class="suggestion-btn" type="button">Which patients have diabetes?</button>
+        <button class="suggestion-btn" type="button">Review medications for patient cs-001</button>
+        <button class="suggestion-btn" type="button">Check allergies for patient mt-004</button>
+      </nav>
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <form class="footer-inner" id="chat-form" aria-label="Chat input">
+    <label for="chat-input" class="sr-only">Message</label>
+    <textarea id="chat-input" class="input-box" rows="1" placeholder="Ask about patients, care gaps, lab results..." aria-label="Type your message"></textarea>
+    <button type="submit" class="send-btn" id="send-btn">Send</button>
+  </form>
+</footer>
+
+<script>
+const API = 'https://healthcare-agent-demo-vzrh.vercel.app/api/chat';
+const HEALTH = 'https://healthcare-agent-demo-vzrh.vercel.app/api/health';
+
+const TOOL_LABELS = {
+  listAllPatients: 'Querying patient registry',
+  getPatientConditions: 'Fetching conditions',
+  searchConditions: 'Searching conditions',
+  getPatientLabs: 'Retrieving lab results',
+  getPatientMedications: 'Fetching medications',
+  getPatientAllergies: 'Checking allergies',
+  discoverFhirServer: 'Discovering FHIR servers',
+};
+
+let messages = [];
+let streaming = false;
+
+const chatEl = document.getElementById('chat');
+const innerEl = document.getElementById('chat-inner');
+const emptyEl = document.getElementById('empty-state');
+const form = document.getElementById('chat-form');
+const input = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+// Health check
+fetch(HEALTH).then(r => r.json()).then(d => {
+  const cs = document.getElementById('badge-cs');
+  const mt = document.getElementById('badge-mt');
+  if (d.status === 'healthy') {
+    cs.textContent = 'CareStack FHIR R4';
+    cs.className = 'badge';
+    mt.textContent = 'Meditab FHIR R4';
+    mt.className = 'badge';
+  }
+}).catch(() => {
+  document.getElementById('badge-cs').textContent = 'CareStack Offline';
+  document.getElementById('badge-cs').className = 'badge badge--error';
+  document.getElementById('badge-mt').textContent = 'Meditab Offline';
+  document.getElementById('badge-mt').className = 'badge badge--error';
+});
+
+// Suggestions
+document.querySelectorAll('.suggestion-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    input.value = btn.textContent;
+    input.focus();
+  });
+});
+
+// Auto-resize textarea
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+
+// Enter to send
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+// Send
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text || streaming) return;
+
+  if (emptyEl) emptyEl.remove();
+
+  // Add user message
+  messages.push({ role: 'user', parts: [{ type: 'text', text }] });
+  appendMsg('user', text);
+  input.value = '';
+  input.style.height = 'auto';
+
+  streaming = true;
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Thinking...';
+
+  // Thinking indicator
+  const thinkEl = document.createElement('div');
+  thinkEl.className = 'thinking';
+  thinkEl.textContent = 'Querying EHR systems via MuleSoft...';
+  innerEl.appendChild(thinkEl);
+  scrollDown();
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`API error: ${res.status} ${await res.text()}`);
+    }
+
+    thinkEl.remove();
+
+    // Parse SSE stream
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let assistantText = '';
+    let tools = {};
+    let msgEl = null;
+    let toolsEl = null;
+    let textEl = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') continue;
+
+        let evt;
+        try { evt = JSON.parse(payload); } catch { continue; }
+
+        // Create message container on first event
+        if (!msgEl) {
+          msgEl = document.createElement('div');
+          msgEl.className = 'msg';
+          const label = document.createElement('div');
+          label.className = 'msg-label msg-label--assistant';
+          label.textContent = 'Clinical Agent';
+          msgEl.appendChild(label);
+          toolsEl = document.createElement('div');
+          toolsEl.className = 'msg-tools';
+          msgEl.appendChild(toolsEl);
+          textEl = document.createElement('div');
+          textEl.className = 'msg-bubble msg-bubble--assistant';
+          msgEl.appendChild(textEl);
+          innerEl.appendChild(msgEl);
+        }
+
+        if (evt.type === 'text' && evt.text) {
+          assistantText += evt.text;
+          textEl.textContent = assistantText;
+          scrollDown();
+        }
+
+        if (evt.type === 'tool-call') {
+          const name = evt.toolName || 'unknown';
+          tools[evt.toolCallId] = name;
+          const pill = document.createElement('span');
+          pill.className = 'tool-pill tool-pill--running';
+          pill.id = 'tool-' + evt.toolCallId;
+          pill.innerHTML = '<span>...</span> MuleSoft: ' + (TOOL_LABELS[name] || name);
+          toolsEl.appendChild(pill);
+          scrollDown();
+        }
+
+        if (evt.type === 'tool-result') {
+          const pill = document.getElementById('tool-' + evt.toolCallId);
+          if (pill) {
+            pill.className = 'tool-pill tool-pill--done';
+            pill.querySelector('span').textContent = 'OK';
+          }
+        }
+      }
+    }
+
+    // Hide text bubble if empty
+    if (textEl && !assistantText.trim()) textEl.style.display = 'none';
+    // Hide tools container if empty
+    if (toolsEl && !toolsEl.children.length) toolsEl.style.display = 'none';
+
+    // Save assistant message
+    const parts = [];
+    if (assistantText) parts.push({ type: 'text', text: assistantText });
+    messages.push({ role: 'assistant', parts });
+
+  } catch (err) {
+    thinkEl.remove();
+    appendMsg('assistant', 'Error: ' + err.message);
+  }
+
+  streaming = false;
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send';
+  scrollDown();
+});
+
+function appendMsg(role, text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+  const label = document.createElement('div');
+  label.className = 'msg-label msg-label--' + role;
+  label.textContent = role === 'user' ? 'You' : 'Clinical Agent';
+  wrap.appendChild(label);
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble msg-bubble--' + role;
+  bubble.textContent = text;
+  if (role === 'user') bubble.style.marginLeft = 'auto';
+  wrap.appendChild(bubble);
+  if (role === 'user') wrap.style.textAlign = 'right';
+  innerEl.appendChild(wrap);
+  scrollDown();
+}
+
+function scrollDown() {
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+</script>
+</body>
+</html>
