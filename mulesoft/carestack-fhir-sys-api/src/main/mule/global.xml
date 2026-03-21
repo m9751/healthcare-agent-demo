@@ -19,11 +19,10 @@
 
   <!-- HTTP Request (outbound — calls CareStack FHIR R4 server) -->
   <http:request-config name="FHIR_CareStack_Request_config" doc:name="FHIR CareStack Request config">
-    <http:request-connection host="${fhir.carestack.host}" port="${fhir.carestack.port}" protocol="HTTPS">
-      <http:default-headers>
-        <http:default-header key="Accept" value="application/fhir+json"/>
-      </http:default-headers>
-    </http:request-connection>
+    <http:request-connection host="${fhir.carestack.host}" port="${fhir.carestack.port}" protocol="HTTPS"/>
+    <http:default-headers>
+      <http:default-header key="Accept" value="application/fhir+json"/>
+    </http:default-headers>
   </http:request-config>
 
 </mule>

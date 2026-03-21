@@ -1,0 +1,7 @@
+{
+  "name": "clinical-federation-prc-api",
+  "minMuleVersion": "4.11.2",
+  "javaSpecificationVersions": [
+    "17"
+  ]
+}

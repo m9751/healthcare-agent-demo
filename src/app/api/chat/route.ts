@@ -1,29 +1,18 @@
 import { streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
-import {
-  getAllPatients,
-  getPatientsBySource,
-  getConditionsForPatient,
-  getConditionsByCode,
-  getLabResultsForPatient,
-  getLabResultsByCode,
-  getMedicationsForPatient,
-  getAllergiesForPatient,
-  findCareGaps,
-  discoverServer,
-} from "@/lib/experience-api/agent-tools";
 
 export const maxDuration = 30;
 
-/**
- * Healthcare Agent — powered by AI SDK + MuleSoft API tools.
- *
- * In production, each tool would call a real MuleSoft Anypoint endpoint.
- * Right now they call mock data so you can demo without infrastructure.
- *
- * To connect real APIs, replace the `execute` functions with fetch() calls
- * to your MuleSoft CloudHub URLs.
- */
+const ANYPOINT_BASE =
+  process.env.ANYPOINT_EXPERIENCE_API_URL ||
+  "https://agent-tools-exp-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io";
+
+async function anypointGet(path: string): Promise<unknown> {
+  const res = await fetch(`${ANYPOINT_BASE}${path}`);
+  if (!res.ok) throw new Error(`Anypoint ${path}: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
@@ -76,11 +65,8 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
             .optional()
             .describe("Filter by EHR source system, or 'all' for both"),
         }),
-        execute: async ({ source }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/patients?source=${source}`)
-          if (source === "CareStack") return getPatientsBySource("CareStack");
-          if (source === "Meditab") return getPatientsBySource("Meditab");
-          return getAllPatients();
+        execute: async () => {
+          return anypointGet("/api/v1/agent/patients");
         },
       }),
 
@@ -91,8 +77,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
           patientId: z.string().describe("Patient ID (e.g., cs-001 for CareStack, mt-001 for Meditab)"),
         }),
         execute: async ({ patientId }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/conditions?patient=${patientId}`)
-          return getConditionsForPatient(patientId);
+          return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/conditions`);
         },
       }),
 
@@ -103,18 +88,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
           icd10Code: z.string().describe("ICD-10 diagnosis code (e.g., E11.9 for Type 2 Diabetes)"),
         }),
         execute: async ({ icd10Code }) => {
-          const matchingConditions = await getConditionsByCode(icd10Code);
-          const patientIds = [...new Set(matchingConditions.map((c) => c.patientId))];
-          const patients = await getAllPatients();
-          const matched = patients.filter((p) => patientIds.includes(p.id));
-          return {
-            conditionCode: icd10Code,
-            totalPatients: matched.length,
-            patients: matched.map((p) => ({
-              ...p,
-              condition: matchingConditions.find((c) => c.patientId === p.id),
-            })),
-          };
+          return anypointGet(`/api/v1/agent/conditions?code=${encodeURIComponent(icd10Code)}`);
         },
       }),
 
@@ -125,34 +99,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
           patientId: z.string().describe("Patient ID"),
         }),
         execute: async ({ patientId }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/observations?patient=${patientId}`)
-          return getLabResultsForPatient(patientId);
-        },
-      }),
-
-      searchLabResults: tool({
-        description:
-          "Search lab results by LOINC code across both EHR systems. Common codes: 4548-4 (A1c), 2160-0 (Creatinine), 33914-3 (eGFR), 2093-3 (Cholesterol).",
-        inputSchema: z.object({
-          loincCode: z.string().describe("LOINC code for the lab test"),
-        }),
-        execute: async ({ loincCode }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/observations?code=${loincCode}`)
-          return getLabResultsByCode(loincCode);
-        },
-      }),
-
-      identifyCareGaps: tool({
-        description:
-          "Identify patients with care gaps across both EHR systems. Currently checks for diabetic patients missing A1c tests or with poorly controlled diabetes (A1c > 7.5%). This is the key clinical intelligence feature.",
-        inputSchema: z.object({
-          gapType: z
-            .enum(["diabetes-a1c"])
-            .optional()
-            .describe("Type of care gap to check. Currently supports diabetes A1c gaps."),
-        }),
-        execute: async () => {
-          return findCareGaps();
+          return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/observations`);
         },
       }),
 
@@ -163,8 +110,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
           patientId: z.string().describe("Patient ID (e.g., cs-001 for CareStack, mt-001 for Meditab)"),
         }),
         execute: async ({ patientId }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/medications?patient=${patientId}`)
-          return getMedicationsForPatient(patientId);
+          return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/medications`);
         },
       }),
 
@@ -175,8 +121,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
           patientId: z.string().describe("Patient ID (e.g., cs-001 for CareStack, mt-001 for Meditab)"),
         }),
         execute: async ({ patientId }) => {
-          // In production: fetch(`${MULESOFT_BASE}/api/allergies?patient=${patientId}`)
-          return getAllergiesForPatient(patientId);
+          return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/allergies`);
         },
       }),
 
@@ -189,8 +134,8 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
             .optional()
             .describe("Which EHR server to discover. Defaults to both."),
         }),
-        execute: async ({ server }) => {
-          return discoverServer(server || "both");
+        execute: async () => {
+          return anypointGet("/api/v1/agent/discover");
         },
       }),
     },

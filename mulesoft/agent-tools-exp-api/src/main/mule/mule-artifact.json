@@ -1,0 +1,7 @@
+{
+  "name": "agent-tools-exp-api",
+  "minMuleVersion": "4.11.2",
+  "javaSpecificationVersions": [
+    "17"
+  ]
+}

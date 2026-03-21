@@ -16,11 +16,10 @@
   </http:listener-config>
 
   <http:request-config name="FHIR_Meditab_Request_config" doc:name="FHIR Meditab Request config">
-    <http:request-connection host="${fhir.meditab.host}" port="${fhir.meditab.port}" protocol="HTTPS">
-      <http:default-headers>
-        <http:default-header key="Accept" value="application/fhir+json"/>
-      </http:default-headers>
-    </http:request-connection>
+    <http:request-connection host="${fhir.meditab.host}" port="${fhir.meditab.port}" protocol="HTTPS"/>
+    <http:default-headers>
+      <http:default-header key="Accept" value="application/fhir+json"/>
+    </http:default-headers>
   </http:request-config>
 
 </mule>

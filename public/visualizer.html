@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Healthcare Agent — Architecture Visualizer</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --surface: #141414; --border: #262626;
+    --text: #e5e5e5; --muted: #737373; --accent: #00a1e0;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --orange: #f97316;
+    --mono: 'Courier New', monospace; --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); padding: 24px; min-height: 100vh; }
+
+  .header { display: flex; align-items: center; gap: 16px; margin-bottom: 32px; }
+  .header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+  .header .subtitle { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: var(--mono); }
+  .badge-live { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .badge-down { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .badge-checking { background: rgba(234,179,8,0.15); color: var(--yellow); border: 1px solid rgba(234,179,8,0.3); }
+
+  .grid { display: grid; grid-template-columns: 1fr; gap: 0; max-width: 900px; margin: 0 auto; }
+
+  /* Layer */
+  .layer { border: 1px solid var(--border); background: var(--surface); padding: 20px; position: relative; }
+  .layer:first-child { border-radius: 8px 8px 0 0; }
+  .layer:last-child { border-radius: 0 0 8px 8px; }
+  .layer + .layer { border-top: none; }
+  .layer-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 12px; }
+  .layer-label span { color: var(--accent); }
+
+  /* Node */
+  .node { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+  .node:last-child { margin-bottom: 0; }
+  .node-left { display: flex; align-items: center; gap: 12px; }
+  .node-icon { width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; font-family: var(--mono); }
+  .node-icon.sys { background: rgba(0,161,224,0.12); color: var(--accent); }
+  .node-icon.prc { background: rgba(249,115,22,0.12); color: var(--orange); }
+  .node-icon.exp { background: rgba(34,197,94,0.12); color: var(--green); }
+  .node-icon.ui { background: rgba(168,85,247,0.12); color: #a855f7; }
+  .node-icon.fhir { background: rgba(234,179,8,0.12); color: var(--yellow); }
+  .node-name { font-size: 14px; font-weight: 500; }
+  .node-url { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; word-break: break-all; }
+  .node-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  .node-latency { font-size: 12px; font-family: var(--mono); color: var(--muted); min-width: 50px; text-align: right; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.up { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+  .status-dot.down { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+  .status-dot.checking { background: var(--yellow); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* Connector arrows */
+  .connector { display: flex; align-items: center; justify-content: center; padding: 4px 0; }
+  .connector svg { color: var(--muted); }
+
+  /* Two-column for system APIs */
+  .node-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .node-pair .node { margin-bottom: 0; }
+
+  /* Footer */
+  .footer { margin-top: 24px; text-align: center; color: var(--muted); font-size: 12px; }
+  .footer button { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 8px; }
+  .footer button:hover { border-color: var(--accent); }
+
+  /* Stats bar */
+  .stats { display: flex; gap: 24px; justify-content: center; margin-bottom: 24px; }
+  .stat { text-align: center; }
+  .stat-value { font-size: 24px; font-weight: 700; font-family: var(--mono); }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+
+<div style="max-width:900px;margin:0 auto;">
+
+<div class="header">
+  <div>
+    <h1>Healthcare Clinical Intelligence</h1>
+    <div class="subtitle">MuleSoft API-Led Connectivity + AI SDK + FHIR R4</div>
+  </div>
+  <span class="badge badge-checking" id="overall-badge">CHECKING</span>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value" id="stat-up">-</div><div class="stat-label">Services Up</div></div>
+  <div class="stat"><div class="stat-value" id="stat-latency">-</div><div class="stat-label">Avg Latency</div></div>
+  <div class="stat"><div class="stat-value" id="stat-patients">-</div><div class="stat-label">Patients</div></div>
+  <div class="stat"><div class="stat-value" id="stat-tools">7</div><div class="stat-label">Agent Tools</div></div>
+</div>
+
+<div class="grid">
+
+  <!-- UI Layer -->
+  <div class="layer">
+    <div class="layer-label"><span>UI</span> Vercel + Next.js + AI SDK</div>
+    <div class="node" id="node-ui">
+      <div class="node-left">
+        <div class="node-icon ui">AI</div>
+        <div><div class="node-name">Clinical Intelligence Agent</div>
+        <div class="node-url">healthcare-agent-demo-vzrh.vercel.app</div></div>
+      </div>
+      <div class="node-right">
+        <div class="node-latency" id="lat-ui">--</div>
+        <div class="status-dot checking" id="dot-ui"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Experience Layer -->
+  <div class="layer">
+    <div class="layer-label"><span>Experience API</span> Agent Tools (CloudHub)</div>
+    <div class="node" id="node-exp">
+      <div class="node-left">
+        <div class="node-icon exp">EX</div>
+        <div><div class="node-name">agent-tools-exp-api</div>
+        <div class="node-url">agent-tools-exp-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io</div></div>
+      </div>
+      <div class="node-right">
+        <div class="node-latency" id="lat-exp">--</div>
+        <div class="status-dot checking" id="dot-exp"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Process Layer -->
+  <div class="layer">
+    <div class="layer-label"><span>Process API</span> Clinical Federation (CloudHub)</div>
+    <div class="node" id="node-prc">
+      <div class="node-left">
+        <div class="node-icon prc">PR</div>
+        <div><div class="node-name">clinical-federation-prc-api</div>
+        <div class="node-url">clinical-federation-prc-api-sewtob.5sc6y6-4.usa-e2.cloudhub.io</div></div>
+      </div>
+      <div class="node-right">
+        <div class="node-latency" id="lat-prc">--</div>
+        <div class="status-dot checking" id="dot-prc"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Layer -->
+  <div class="layer">
+    <div class="layer-label"><span>System APIs</span> EHR Connectors (CloudHub)</div>
+    <div class="node-pair">
+      <div class="node" id="node-cs">
+        <div class="node-left">
+          <div class="node-icon sys">CS</div>
+          <div><div class="node-name">carestack-fhir-sys-api</div>
+          <div class="node-url">...sewtob.5sc6y6-1.usa-e2.cloudhub.io</div></div>
+        </div>
+        <div class="node-right">
+          <div class="node-latency" id="lat-cs">--</div>
+          <div class="status-dot checking" id="dot-cs"></div>
+        </div>
+      </div>
+      <div class="node" id="node-mt">
+        <div class="node-left">
+          <div class="node-icon sys">MT</div>
+          <div><div class="node-name">meditab-fhir-sys-api</div>
+          <div class="node-url">...sewtob.5sc6y6-1.usa-e2.cloudhub.io</div></div>
+        </div>
+        <div class="node-right">
+          <div class="node-latency" id="lat-mt">--</div>
+          <div class="status-dot checking" id="dot-mt"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FHIR Servers -->
+  <div class="layer">
+    <div class="layer-label"><span>FHIR R4 Servers</span> SMART Health IT Sandbox (External)</div>
+    <div class="node-pair">
+      <div class="node">
+        <div class="node-left">
+          <div class="node-icon fhir">R4</div>
+          <div><div class="node-name">CareStack FHIR</div>
+          <div class="node-url">r4.smarthealthit.org (birthdate ge1960)</div></div>
+        </div>
+        <div class="node-right">
+          <div class="status-dot up"></div>
+        </div>
+      </div>
+      <div class="node">
+        <div class="node-left">
+          <div class="node-icon fhir">R4</div>
+          <div><div class="node-name">Meditab FHIR</div>
+          <div class="node-url">r4.smarthealthit.org (birthdate ge1940)</div></div>
+        </div>
+        <div class="node-right">
+          <div class="status-dot up"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <div>Last checked: <span id="last-check">--</span></div>
+  <button onclick="runChecks()">Run Health Checks</button>
+</div>
+
+</div>
+
+<script>
+const ENDPOINTS = {
+  ui:  { url: 'https://healthcare-agent-demo-vzrh.vercel.app/api/health', dot: 'dot-ui', lat: 'lat-ui' },
+  exp: { url: 'https://agent-tools-exp-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io/api/v1/agent/health', dot: 'dot-exp', lat: 'lat-exp' },
+  prc: { url: 'https://clinical-federation-prc-api-sewtob.5sc6y6-4.usa-e2.cloudhub.io/api/v1/clinical/patients', dot: 'dot-prc', lat: 'lat-prc' },
+  cs:  { url: 'https://carestack-fhir-sys-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io/api/v1/carestack/patients', dot: 'dot-cs', lat: 'lat-cs' },
+  mt:  { url: 'https://meditab-fhir-sys-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io/api/v1/meditab/patients', dot: 'dot-mt', lat: 'lat-mt' },
+};
+
+async function checkEndpoint(key) {
+  const ep = ENDPOINTS[key];
+  const dot = document.getElementById(ep.dot);
+  const lat = document.getElementById(ep.lat);
+  dot.className = 'status-dot checking';
+  const t0 = performance.now();
+  try {
+    const r = await fetch(ep.url, { mode: 'cors', signal: AbortSignal.timeout(8000) });
+    const ms = Math.round(performance.now() - t0);
+    if (r.ok) {
+      dot.className = 'status-dot up';
+      lat.textContent = ms + 'ms';
+      // Try to get patient count from process API
+      if (key === 'prc') {
+        try {
+          const data = await r.json();
+          if (Array.isArray(data)) document.getElementById('stat-patients').textContent = data.length;
+        } catch {}
+      }
+      return { up: true, ms };
+    }
+    dot.className = 'status-dot down';
+    lat.textContent = r.status;
+    return { up: false, ms };
+  } catch (e) {
+    dot.className = 'status-dot down';
+    lat.textContent = 'ERR';
+    return { up: false, ms: 0 };
+  }
+}
+
+async function runChecks() {
+  const results = await Promise.all(Object.keys(ENDPOINTS).map(k => checkEndpoint(k)));
+  const upCount = results.filter(r => r.up).length;
+  const avgMs = Math.round(results.filter(r => r.up).reduce((s, r) => s + r.ms, 0) / (upCount || 1));
+
+  document.getElementById('stat-up').textContent = upCount + '/' + results.length;
+  document.getElementById('stat-latency').textContent = avgMs + 'ms';
+
+  const badge = document.getElementById('overall-badge');
+  if (upCount === results.length) {
+    badge.textContent = 'ALL SYSTEMS LIVE';
+    badge.className = 'badge badge-live';
+  } else if (upCount > 0) {
+    badge.textContent = 'DEGRADED';
+    badge.className = 'badge badge-checking';
+  } else {
+    badge.textContent = 'DOWN';
+    badge.className = 'badge badge-down';
+  }
+
+  document.getElementById('last-check').textContent = new Date().toLocaleTimeString();
+}
+
+runChecks();
+setInterval(runChecks, 30000);
+</script>
+</body>
+</html>

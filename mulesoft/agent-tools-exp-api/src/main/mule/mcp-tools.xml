@@ -11,6 +11,12 @@
     http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
     http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd">
 
+  <!-- MCP Server Configuration — Streamable HTTP transport -->
+  <mcp:server name="MCP_Server_config" doc:name="MCP Server config"
+    serverName="Healthcare Clinical Intelligence" serverVersion="1.0.0">
+    <mcp:streamable-http-server listenerConfig="MCP_HTTP_Listener_config" mcpEndpointPath="/mcp"/>
+  </mcp:server>
+
   <!-- ============================================================
        MCP TOOL LISTENERS
        Exposes Experience API endpoints as MCP-compatible tools.
@@ -18,16 +24,10 @@
        Uses Streamable HTTP transport per MCP Connector v1.3.1.
        ============================================================ -->
 
-  <!-- MCP Server Configuration — Streamable HTTP transport -->
-  <mcp:config name="MCP_Server_config" doc:name="MCP Server config">
-    <mcp:streamable-http-connection host="0.0.0.0" port="${mcp.port}"/>
-  </mcp:config>
-
   <!-- Tool: listAllPatients -->
   <flow name="mcp-list-all-patients" doc:name="MCP Tool: listAllPatients">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="listAllPatients"
-      toolName="listAllPatients"
-      toolDescription="List all patients from both CareStack and Meditab EHR systems. Returns normalized patient demographics including name, birthDate, gender, address, and source system (CareStack or Meditab).">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="listAllPatients" name="listAllPatients">
+      <mcp:description>List all patients from both CareStack and Meditab EHR systems. Returns normalized patient demographics including name, birthDate, gender, address, and source system (CareStack or Meditab).</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {},
@@ -45,9 +45,8 @@
 
   <!-- Tool: getPatientConditions -->
   <flow name="mcp-get-patient-conditions" doc:name="MCP Tool: getPatientConditions">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientConditions"
-      toolName="getPatientConditions"
-      toolDescription="Get all conditions and diagnoses for a specific patient. Returns conditions with ICD-10 codes, display names, and onset dates. Use patient IDs with prefix cs- (CareStack) or mt- (Meditab).">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientConditions" name="getPatientConditions">
+      <mcp:description>Get all conditions and diagnoses for a specific patient. Returns conditions with ICD-10 codes, display names, and onset dates. Use patient IDs with prefix cs- (CareStack) or mt- (Meditab).</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {
@@ -61,15 +60,14 @@
     </mcp:tool-listener>
     <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
       path="${prcapi.clinical.basePath}/patients/{patientId}/conditions" doc:name="GET conditions">
-      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.queryParams.patientId }]]]></http:uri-params>
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
     </http:request>
   </flow>
 
   <!-- Tool: searchConditions -->
   <flow name="mcp-search-conditions" doc:name="MCP Tool: searchConditions">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="searchConditions"
-      toolName="searchConditions"
-      toolDescription="Search for patients with a specific condition across both EHR systems. Accepts ICD-10 codes (e.g., E11.9 for Type 2 Diabetes) or SNOMED codes. Returns all matching conditions with patient IDs.">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="searchConditions" name="searchConditions">
+      <mcp:description>Search for patients with a specific condition across both EHR systems. Accepts ICD-10 codes (e.g., E11.9 for Type 2 Diabetes) or SNOMED codes. Returns all matching conditions with patient IDs.</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {
@@ -83,15 +81,14 @@
     </mcp:tool-listener>
     <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
       path="${prcapi.clinical.basePath}/conditions" doc:name="Search conditions">
-      <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
+      <http:query-params><![CDATA[#[output application/java --- { "code": payload.code }]]]></http:query-params>
     </http:request>
   </flow>
 
   <!-- Tool: getPatientLabs -->
   <flow name="mcp-get-patient-labs" doc:name="MCP Tool: getPatientLabs">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientLabs"
-      toolName="getPatientLabs"
-      toolDescription="Get laboratory test results for a specific patient. Returns lab values with LOINC codes, numeric values, units, and dates. Includes blood work like A1c (4548-4), glucose, cholesterol panels.">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientLabs" name="getPatientLabs">
+      <mcp:description>Get laboratory test results for a specific patient. Returns lab values with LOINC codes, numeric values, units, and dates. Includes blood work like A1c (4548-4), glucose, cholesterol panels.</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {
@@ -105,15 +102,14 @@
     </mcp:tool-listener>
     <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
       path="${prcapi.clinical.basePath}/patients/{patientId}/observations" doc:name="GET labs">
-      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.queryParams.patientId }]]]></http:uri-params>
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
     </http:request>
   </flow>
 
   <!-- Tool: getPatientMedications -->
   <flow name="mcp-get-patient-medications" doc:name="MCP Tool: getPatientMedications">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientMedications"
-      toolName="getPatientMedications"
-      toolDescription="Get active medication requests for a specific patient. Returns medication names, RxNorm codes, dosage instructions, status, and date written.">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientMedications" name="getPatientMedications">
+      <mcp:description>Get active medication requests for a specific patient. Returns medication names, RxNorm codes, dosage instructions, status, and date written.</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {
@@ -127,15 +123,14 @@
     </mcp:tool-listener>
     <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
       path="${prcapi.clinical.basePath}/patients/{patientId}/medications" doc:name="GET medications">
-      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.queryParams.patientId }]]]></http:uri-params>
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
     </http:request>
   </flow>
 
   <!-- Tool: getPatientAllergies -->
   <flow name="mcp-get-patient-allergies" doc:name="MCP Tool: getPatientAllergies">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientAllergies"
-      toolName="getPatientAllergies"
-      toolDescription="Get allergy and intolerance records for a specific patient. Returns allergen substance, category (food/medication/environment), criticality (low/high), reaction details, and clinical status.">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="getPatientAllergies" name="getPatientAllergies">
+      <mcp:description>Get allergy and intolerance records for a specific patient. Returns allergen substance, category (food/medication/environment), criticality (low/high), reaction details, and clinical status.</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {
@@ -149,15 +144,14 @@
     </mcp:tool-listener>
     <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
       path="${prcapi.clinical.basePath}/patients/{patientId}/allergies" doc:name="GET allergies">
-      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.queryParams.patientId }]]]></http:uri-params>
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
     </http:request>
   </flow>
 
   <!-- Tool: discoverFhirServer -->
   <flow name="mcp-discover-servers" doc:name="MCP Tool: discoverFhirServer">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="discoverFhirServer"
-      toolName="discoverFhirServer"
-      toolDescription="Discover connected FHIR R4 EHR servers and their capabilities. Returns server name, FHIR version, software info, and total supported resource types for each connected system.">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="discoverFhirServer" name="discoverFhirServer">
+      <mcp:description>Discover connected FHIR R4 EHR servers and their capabilities. Returns server name, FHIR version, software info, and total supported resource types for each connected system.</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {},
@@ -170,9 +164,8 @@
 
   <!-- Tool: healthCheck -->
   <flow name="mcp-health-check" doc:name="MCP Tool: healthCheck">
-    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="healthCheck"
-      toolName="healthCheck"
-      toolDescription="Check the health status of the Healthcare Clinical Intelligence API and all downstream dependencies.">
+    <mcp:tool-listener config-ref="MCP_Server_config" doc:name="healthCheck" name="healthCheck">
+      <mcp:description>Check the health status of the Healthcare Clinical Intelligence API and all downstream dependencies.</mcp:description>
       <mcp:parameters-schema><![CDATA[{
         "type": "object",
         "properties": {},

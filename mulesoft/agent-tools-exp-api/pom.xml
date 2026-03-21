@@ -9,7 +9,7 @@
   <properties>
       <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
       <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-      <mule.maven.plugin.version>4.0.0</mule.maven.plugin.version>
+      <mule.maven.plugin.version>4.3.0</mule.maven.plugin.version>
   </properties>
   <build>
       <plugins>
@@ -38,6 +38,24 @@
           <id>mulesoft-releases</id>
           <name>MuleSoft Releases Repository</name>
           <url>https://repository.mulesoft.org/releases/</url>
+          <layout>default</layout>
+      </repository>
+      <repository>
+          <id>central</id>
+          <name>Maven Central</name>
+          <url>https://repo1.maven.org/maven2/</url>
+          <layout>default</layout>
+      </repository>
+      <repository>
+          <id>jitpack.io</id>
+          <name>JitPack</name>
+          <url>https://jitpack.io</url>
+          <layout>default</layout>
+      </repository>
+      <repository>
+          <id>anypoint-exchange-v3</id>
+          <name>MuleSoft EE Releases</name>
+          <url>https://repository.mulesoft.org/nexus/content/repositories/releases-ee/</url>
           <layout>default</layout>
       </repository>
   </repositories>
