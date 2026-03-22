@@ -142,6 +142,24 @@ Rebuild, deploy. No changes to Process API, Experience API, or frontend.
 
 **Add a third facility:** Copy any System API, change the FHIR URL, add it to the Process API scatter-gather. Rebuild. Everything above it works unchanged.
 
+## Compatible FHIR R4 EHR Systems
+
+Any EHR that exposes FHIR R4 endpoints works with this architecture. The System APIs call standard FHIR resources — no vendor-specific code.
+
+| EHR | FHIR R4 Sandbox | Auth | Notes |
+|-----|----------------|------|-------|
+| **Epic** | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | OAuth/SMART | Register via [Epic Showroom](https://fhir.epic.com/). Largest US EHR market share |
+| **Oracle Health (Cerner)** | `fhir-open.cerner.com/r4/{tenant-id}` | Open sandbox available | [Open sandbox docs](https://fhir.cerner.com/millennium/r4/) |
+| **MEDITECH Expanse** | `greenfield.meditech.com/explorer` | OAuth/SMART | [Greenfield Portal](https://greenfield.meditech.com/) — FHIR R4 US Core STU7 |
+| **CareStack** | Customer-provisioned | OAuth | FHIR R4 compliant — no public sandbox |
+| **athenahealth** | Customer-provisioned | OAuth | [Developer portal](https://developer.athenahealth.com/) — FHIR R4 APIs |
+| **Allscripts/Veradigm** | Customer-provisioned | OAuth | FHIR R4 via FHIRPoint |
+| **eClinicalWorks** | Customer-provisioned | OAuth | FHIR R4 compliant |
+| **NextGen Healthcare** | Customer-provisioned | OAuth | FHIR R4 via Mirth |
+| **SMART Health IT** | `r4.smarthealthit.org` | Open | **Used in this demo** — Synthea synthetic patients |
+
+This demo uses the SMART Health IT sandbox (`r4.smarthealthit.org`) — an open FHIR R4 server with synthetic patient data. To connect a production EHR, replace the FHIR URL in the System API's `config.properties`. The System API contract is identical regardless of which EHR is behind it.
+
 ## Implementation Notes
 
 Directory names (`carestack-fhir-sys-api`, `meditab-fhir-sys-api`) are artifact identifiers from the reference deployment. User-facing labels ("Flagship Hospital", "Community Clinic") represent the demo scenario. Rename to match your facilities.
