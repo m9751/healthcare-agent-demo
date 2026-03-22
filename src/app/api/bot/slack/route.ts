@@ -87,7 +87,9 @@ async function callChatAPI(
     throw new Error(`Chat API returned ${res.status}: ${await res.text()}`);
   }
 
-  // Parse SSE stream — collect all text chunks
+  // Parse AI SDK v6 UIMessage stream format
+  // Format: type-prefix:json-value per line
+  // Text chunks use prefix "0:" with JSON string value
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body from chat API");
 
@@ -101,21 +103,22 @@ async function callChatAPI(
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
-    // Keep the last potentially incomplete line in the buffer
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const jsonStr = line.slice(6).trim();
-      if (!jsonStr || jsonStr === "[DONE]") continue;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
 
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed.type === "text" && parsed.text) {
-          textParts.push(parsed.text);
+      // AI SDK v6 UIMessage stream: text chunks are "0:\"text\""
+      if (trimmed.startsWith("0:")) {
+        try {
+          const text = JSON.parse(trimmed.slice(2));
+          if (typeof text === "string") {
+            textParts.push(text);
+          }
+        } catch {
+          // skip malformed lines
         }
-      } catch {
-        // Skip non-JSON SSE lines (e.g. metadata, step boundaries)
       }
     }
   }
