@@ -10,8 +10,8 @@
     http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
   <!-- ============================================================
-       CARESTACK FHIR R4 SYSTEM API
-       Wraps the CareStack EHR FHIR R4 endpoint with MuleSoft patterns.
+       FLAGSHIP HOSPITAL FHIR R4 SYSTEM API
+       Wraps the Flagship Hospital EHR FHIR R4 endpoint with MuleSoft patterns.
        Each flow = one FHIR resource operation.
        Derived from: src/lib/system-api/carestack.ts
        ============================================================ -->
@@ -147,7 +147,7 @@
             issue: [{
               severity: "error",
               code: "exception",
-              diagnostics: "CareStack FHIR server unreachable: " ++ (error.description default "Connection failed")
+              diagnostics: "Flagship Hospital FHIR server unreachable: " ++ (error.description default "Connection failed")
             }]
           }]]]></ee:set-payload>
           <ee:set-attributes><![CDATA[#[{httpStatus: 502}]]]></ee:set-attributes>

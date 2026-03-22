@@ -17,11 +17,11 @@
     <http:listener-connection host="0.0.0.0" port="${http.port}"/>
   </http:listener-config>
 
-  <http:request-config name="CareStack_Sys_API_config" doc:name="CareStack System API">
+  <http:request-config name="CareStack_Sys_API_config" doc:name="Flagship Hospital System API">
     <http:request-connection host="${sysapi.carestack.host}" port="${sysapi.carestack.port}" protocol="${sysapi.carestack.protocol}"/>
   </http:request-config>
 
-  <http:request-config name="Meditab_Sys_API_config" doc:name="Meditab System API">
+  <http:request-config name="Meditab_Sys_API_config" doc:name="Community Clinic System API">
     <http:request-connection host="${sysapi.meditab.host}" port="${sysapi.meditab.port}" protocol="${sysapi.meditab.protocol}"/>
   </http:request-config>
 

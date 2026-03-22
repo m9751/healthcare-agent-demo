@@ -104,12 +104,12 @@ export default function HealthcareAgentDemo() {
               fontFamily: "system-ui, -apple-system, sans-serif",
             }}
           >
-            Powered by MuleSoft + SMART on FHIR R4 &bull; CareStack + Meditab
+            Powered by MuleSoft + SMART on FHIR R4 &bull; Flagship Hospital + Community Clinic
           </p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-          <StatusBadge label="CareStack" serverStatus={serverStatus.carestack?.status} />
-          <StatusBadge label="Meditab" serverStatus={serverStatus.meditab?.status} />
+          <StatusBadge label="Flagship Hospital" serverStatus={serverStatus.carestack?.status} />
+          <StatusBadge label="Community Clinic" serverStatus={serverStatus.meditab?.status} />
         </div>
       </header>
 
@@ -279,8 +279,9 @@ function EmptyState({ onSuggestion }: { onSuggestion: (q: string) => void }) {
           fontFamily: "system-ui, -apple-system, sans-serif",
         }}
       >
-        Query real FHIR R4 patient data across CareStack and Meditab via SMART on FHIR.
-        MuleSoft discovers, authenticates, and federates data from both EHR systems.
+        Query real FHIR R4 patient data across Flagship Hospital and Community Clinic via SMART on FHIR.
+        MuleSoft discovers, authenticates, and federates data from both EHR systems — the same
+        pattern works with any FHIR R4-compliant EHR (Epic, Cerner, MEDITECH, and more).
       </p>
       <div
         style={{

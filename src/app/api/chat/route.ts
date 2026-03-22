@@ -20,7 +20,11 @@ export async function POST(req: Request) {
   const result = streamText({
     model: "anthropic/claude-sonnet-4.6",
     system: `You are a Clinical Intelligence Agent powered by MuleSoft + SMART on FHIR.
-You query real FHIR R4 servers — CareStack and Meditab — through MuleSoft's API-led connectivity layer.
+You query real FHIR R4 servers — Flagship Hospital and Community Clinic — through MuleSoft's API-led connectivity layer.
+
+This is a FHIR R4 standard adapter: the same integration pattern works with any FHIR R4-compliant EHR
+(Epic, Cerner, MEDITECH Expanse, etc.). Flagship Hospital and Community Clinic are the two health systems
+connected in this demo, but the architecture is EHR-agnostic by design.
 
 This agent implements the MEDITECH Greenfield Clinical Decision Support (CDS) workflow pattern:
   1. Patient Identification & Context — retrieve patient demographics and encounter context
@@ -59,10 +63,10 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
     tools: {
       listAllPatients: tool({
         description:
-          "List all patients across both CareStack and Meditab EHR systems via MuleSoft API. Returns unified patient demographics.",
+          "List all patients across both EHR systems (Flagship Hospital and Community Clinic) via MuleSoft API. Returns unified patient demographics.",
         inputSchema: z.object({
           source: z
-            .enum(["all", "CareStack", "Meditab"])
+            .enum(["all", "FlagshipHospital", "CommunityClinic"])
             .optional()
             .describe("Filter by EHR source system, or 'all' for both"),
         }),
@@ -75,7 +79,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
         description:
           "Get all diagnoses/conditions for a specific patient from their EHR via MuleSoft FHIR API. Returns ICD-10 codes and descriptions.",
         inputSchema: z.object({
-          patientId: z.string().describe("Patient ID (e.g., cs-001 for CareStack, mt-001 for Meditab)"),
+          patientId: z.string().describe("Patient ID (e.g., cs-001 for Flagship Hospital, mt-001 for Community Clinic)"),
         }),
         execute: async ({ patientId }) => {
           return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/conditions`);
@@ -108,7 +112,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
         description:
           "Get all active medications for a specific patient from their EHR via MuleSoft FHIR API. Returns RxNorm-coded medications with dosage instructions. Key for medication reconciliation and drug interaction checks.",
         inputSchema: z.object({
-          patientId: z.string().describe("Patient ID (e.g., cs-001 for CareStack, mt-001 for Meditab)"),
+          patientId: z.string().describe("Patient ID (e.g., cs-001 for Flagship Hospital, mt-001 for Community Clinic)"),
         }),
         execute: async ({ patientId }) => {
           return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/medications`);
@@ -119,7 +123,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
         description:
           "Get all documented allergies and intolerances for a specific patient from their EHR via MuleSoft FHIR API. Returns substance, criticality, and reaction details. CRITICAL for patient safety — always check before medication recommendations.",
         inputSchema: z.object({
-          patientId: z.string().describe("Patient ID (e.g., cs-001 for CareStack, mt-001 for Meditab)"),
+          patientId: z.string().describe("Patient ID (e.g., cs-001 for Flagship Hospital, mt-001 for Community Clinic)"),
         }),
         execute: async ({ patientId }) => {
           return anypointGet(`/api/v1/agent/patients/${encodeURIComponent(patientId)}/allergies`);
@@ -131,7 +135,7 @@ SNOMED codes, handles FHIR pagination, and presents a unified patient view to th
           "Discover FHIR server capabilities via CapabilityStatement (SMART on FHIR auto-discovery). Shows server software, FHIR version, and supported clinical resource types. Demonstrates how MuleSoft auto-discovers any FHIR-compliant EHR.",
         inputSchema: z.object({
           server: z
-            .enum(["CareStack", "Meditab", "both"])
+            .enum(["FlagshipHospital", "CommunityClinic", "both"])
             .optional()
             .describe("Which EHR server to discover. Defaults to both."),
         }),

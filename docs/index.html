@@ -183,11 +183,11 @@ body {
   <div class="header-logo" aria-hidden="true">M</div>
   <div>
     <div class="header-title">Clinical Intelligence Agent</div>
-    <div class="header-sub">MuleSoft + SMART on FHIR R4 &bull; CareStack + Meditab</div>
+    <div class="header-sub">MuleSoft + SMART on FHIR R4 &bull; Flagship Hospital + Community Clinic</div>
   </div>
   <div class="header-badges">
-    <span class="badge badge--loading" id="badge-cs">CareStack ...</span>
-    <span class="badge badge--loading" id="badge-mt">Meditab ...</span>
+    <span class="badge badge--loading" id="badge-cs">Flagship Hospital ...</span>
+    <span class="badge badge--loading" id="badge-mt">Community Clinic ...</span>
   </div>
 </header>
 
@@ -196,7 +196,7 @@ body {
     <div class="empty" id="empty-state">
       <div class="empty-icon" aria-hidden="true">+</div>
       <h1>Unified Clinical Intelligence</h1>
-      <p>Query real FHIR R4 patient data across CareStack and Meditab. MuleSoft federates, normalizes, and presents a unified view for AI-powered clinical decision support.</p>
+      <p>Query real FHIR R4 patient data across Flagship Hospital and Community Clinic. MuleSoft federates, normalizes, and presents a unified view for AI-powered clinical decision support.</p>
       <nav class="suggestions" aria-label="Suggested queries">
         <button class="suggestion-btn" type="button">Discover FHIR server capabilities</button>
         <button class="suggestion-btn" type="button">Show me all patients across both FHIR servers</button>
@@ -245,15 +245,15 @@ fetch(HEALTH).then(r => r.json()).then(d => {
   const cs = document.getElementById('badge-cs');
   const mt = document.getElementById('badge-mt');
   if (d.status === 'healthy') {
-    cs.textContent = 'CareStack FHIR R4';
+    cs.textContent = 'Flagship Hospital FHIR R4';
     cs.className = 'badge';
-    mt.textContent = 'Meditab FHIR R4';
+    mt.textContent = 'Community Clinic FHIR R4';
     mt.className = 'badge';
   }
 }).catch(() => {
-  document.getElementById('badge-cs').textContent = 'CareStack Offline';
+  document.getElementById('badge-cs').textContent = 'Flagship Hospital Offline';
   document.getElementById('badge-cs').className = 'badge badge--error';
-  document.getElementById('badge-mt').textContent = 'Meditab Offline';
+  document.getElementById('badge-mt').textContent = 'Community Clinic Offline';
   document.getElementById('badge-mt').className = 'badge badge--error';
 });
 

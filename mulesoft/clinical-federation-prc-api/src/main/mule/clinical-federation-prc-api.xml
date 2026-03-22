@@ -13,7 +13,7 @@
 
   <!-- ============================================================
        CLINICAL FEDERATION PROCESS API
-       Orchestrates across CareStack + Meditab System APIs.
+       Orchestrates across Flagship Hospital + Community Clinic System APIs.
        Key MuleSoft patterns: Scatter-Gather, DataWeave, Object Store, Choice Router.
        Derived from: src/lib/process-api/clinical-federation.ts (510 lines)
        ============================================================ -->
@@ -25,14 +25,14 @@
     <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
 
     <!-- Scatter-Gather: query both EHR systems in parallel -->
-    <scatter-gather doc:name="Query CareStack + Meditab in parallel">
+    <scatter-gather doc:name="Query Flagship Hospital + Community Clinic in parallel">
       <route>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/patients" doc:name="CareStack GET patients"/>
+          path="${sysapi.carestack.basePath}/patients" doc:name="Flagship Hospital GET patients"/>
       </route>
       <route>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/patients" doc:name="Meditab GET patients"/>
+          path="${sysapi.meditab.basePath}/patients" doc:name="Community Clinic GET patients"/>
       </route>
     </scatter-gather>
 
@@ -66,7 +66,7 @@ var snomedToIcd10 = {
 var csBundle = payload."0".payload
 var mtBundle = payload."1".payload
 
-// Normalize CareStack patients (prefix: cs-)
+// Normalize Flagship Hospital patients (prefix: cs-)
 var csPatients = if (csBundle.entry != null)
   (csBundle.entry map (entry) -> {
     id: "cs-" ++ entry.resource.id[0 to 7],
@@ -81,11 +81,11 @@ var csPatients = if (csBundle.entry != null)
       city: (entry.resource.address[0].city default "Unknown"),
       state: (entry.resource.address[0].state default "Unknown")
     }],
-    source: "CareStack"
+    source: "Flagship Hospital"
   })
   else []
 
-// Normalize Meditab patients (prefix: mt-)
+// Normalize Community Clinic patients (prefix: mt-)
 var mtPatients = if (mtBundle.entry != null)
   (mtBundle.entry map (entry) -> {
     id: "mt-" ++ entry.resource.id[0 to 7],
@@ -100,7 +100,7 @@ var mtPatients = if (mtBundle.entry != null)
       city: (entry.resource.address[0].city default "Unknown"),
       state: (entry.resource.address[0].state default "Unknown")
     }],
-    source: "Meditab"
+    source: "Community Clinic"
   })
   else []
 ---
@@ -123,14 +123,14 @@ csPatients ++ mtPatients
       <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/patients/{fhirId}/conditions" doc:name="CareStack GET conditions">
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/conditions" doc:name="Flagship Hospital GET conditions">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
       <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/patients/{fhirId}/conditions" doc:name="Meditab GET conditions">
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/conditions" doc:name="Community Clinic GET conditions">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
@@ -170,7 +170,7 @@ var snomedToIcd10 = {
   "162864005": { icd10: "R73.09", display: "Prediabetes" }
 }
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
 ---
 if (payload.entry != null)
   (payload.entry map (entry) -> do {
@@ -202,13 +202,13 @@ else []
     <scatter-gather doc:name="Search conditions across both EHRs">
       <route>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/conditions" doc:name="CareStack search conditions">
+          path="${sysapi.carestack.basePath}/conditions" doc:name="Flagship Hospital search conditions">
           <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
         </http:request>
       </route>
       <route>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/conditions" doc:name="Meditab search conditions">
+          path="${sysapi.meditab.basePath}/conditions" doc:name="Community Clinic search conditions">
           <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
         </http:request>
       </route>
@@ -230,9 +230,9 @@ fun normalizeEntry(entry, prefix, source) = {
   source: source
 }
 ---
-(if (csResults.entry != null) (csResults.entry map normalizeEntry($, "cs", "CareStack")) else [])
+(if (csResults.entry != null) (csResults.entry map normalizeEntry($, "cs", "Flagship Hospital")) else [])
 ++
-(if (mtResults.entry != null) (mtResults.entry map normalizeEntry($, "mt", "Meditab")) else [])
+(if (mtResults.entry != null) (mtResults.entry map normalizeEntry($, "mt", "Community Clinic")) else [])
 ]]]></ee:set-payload>
       </ee:message>
     </ee:transform>
@@ -247,14 +247,14 @@ fun normalizeEntry(entry, prefix, source) = {
       <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/patients/{fhirId}/observations" doc:name="CareStack GET observations">
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/observations" doc:name="Flagship Hospital GET observations">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
       <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/patients/{fhirId}/observations" doc:name="Meditab GET observations">
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/observations" doc:name="Community Clinic GET observations">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
@@ -265,7 +265,7 @@ fun normalizeEntry(entry, prefix, source) = {
 %dw 2.0
 output application/json
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
 ---
 if (payload.entry != null)
   (payload.entry filter ($.resource.valueQuantity.value != null) map (entry) -> {
@@ -291,14 +291,14 @@ else []
       <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/patients/{fhirId}/medications" doc:name="CareStack GET medications">
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/medications" doc:name="Flagship Hospital GET medications">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
       <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/patients/{fhirId}/medications" doc:name="Meditab GET medications">
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/medications" doc:name="Community Clinic GET medications">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
@@ -309,7 +309,7 @@ else []
 %dw 2.0
 output application/json
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
 ---
 if (payload.entry != null)
   (payload.entry map (entry) -> {
@@ -336,14 +336,14 @@ else []
       <when expression="#[attributes.uriParams.patientId startsWith 'cs-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/patients/{fhirId}/allergies" doc:name="CareStack GET allergies">
+          path="${sysapi.carestack.basePath}/patients/{fhirId}/allergies" doc:name="Flagship Hospital GET allergies">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
       <when expression="#[attributes.uriParams.patientId startsWith 'mt-']">
         <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/patients/{fhirId}/allergies" doc:name="Meditab GET allergies">
+          path="${sysapi.meditab.basePath}/patients/{fhirId}/allergies" doc:name="Community Clinic GET allergies">
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
@@ -354,7 +354,7 @@ else []
 %dw 2.0
 output application/json
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "CareStack" else "Meditab"
+var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
 ---
 if (payload.entry != null)
   (payload.entry map (entry) -> {
@@ -382,11 +382,11 @@ else []
     <scatter-gather doc:name="Query metadata from both EHRs">
       <route>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
-          path="${sysapi.carestack.basePath}/metadata" doc:name="CareStack metadata"/>
+          path="${sysapi.carestack.basePath}/metadata" doc:name="Flagship Hospital metadata"/>
       </route>
       <route>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
-          path="${sysapi.meditab.basePath}/metadata" doc:name="Meditab metadata"/>
+          path="${sysapi.meditab.basePath}/metadata" doc:name="Community Clinic metadata"/>
       </route>
     </scatter-gather>
     <ee:transform doc:name="Format server discovery response">
@@ -406,7 +406,7 @@ fun serverInfo(cap, name) = {
   status: "connected"
 }
 ---
-[serverInfo(csCap, "CareStack"), serverInfo(mtCap, "Meditab")]
+[serverInfo(csCap, "Flagship Hospital"), serverInfo(mtCap, "Community Clinic")]
 ]]]></ee:set-payload>
       </ee:message>
     </ee:transform>

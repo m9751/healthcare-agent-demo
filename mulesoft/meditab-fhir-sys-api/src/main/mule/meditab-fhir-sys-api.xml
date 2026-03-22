@@ -10,8 +10,8 @@
     http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
   <!-- ============================================================
-       MEDITAB FHIR R4 SYSTEM API
-       Identical contract to CareStack — proves API-led interchangeability.
+       COMMUNITY CLINIC FHIR R4 SYSTEM API
+       Identical contract to Flagship Hospital — proves API-led interchangeability.
        Same endpoints, same FHIR resources, different EHR config.
        Derived from: src/lib/system-api/meditab.ts
        ============================================================ -->
@@ -121,7 +121,7 @@
             issue: [{
               severity: "error",
               code: "exception",
-              diagnostics: "Meditab FHIR server unreachable: " ++ (error.description default "Connection failed")
+              diagnostics: "Community Clinic FHIR server unreachable: " ++ (error.description default "Connection failed")
             }]
           }]]]></ee:set-payload>
           <ee:set-attributes><![CDATA[#[{httpStatus: 502}]]]></ee:set-attributes>

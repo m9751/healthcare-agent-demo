@@ -183,12 +183,12 @@ tr:hover td{background:rgba(0,161,224,0.03)}
 
   <!-- System Layer -->
   <rect x="40" y="360" width="400" height="70" rx="8" fill="rgba(0,161,224,0.08)" stroke="#00A1E0" stroke-width="1.5"/>
-  <text x="60" y="383" fill="#00A1E0" font-size="11" font-weight="700">SYSTEM API — CareStack (8 flows)</text>
+  <text x="60" y="383" fill="#00A1E0" font-size="11" font-weight="700">SYSTEM API — Flagship Hospital (8 flows)</text>
   <text x="60" y="398" fill="#94A3B8" font-size="10">carestack-fhir-sys-api | 0.1 vCore</text>
   <text x="60" y="418" fill="#94A3B8" font-size="9">FHIR R4 | birthdate ge1960 le1980</text>
 
   <rect x="460" y="360" width="400" height="70" rx="8" fill="rgba(0,161,224,0.08)" stroke="#00A1E0" stroke-width="1.5"/>
-  <text x="480" y="383" fill="#00A1E0" font-size="11" font-weight="700">SYSTEM API — Meditab (8 flows)</text>
+  <text x="480" y="383" fill="#00A1E0" font-size="11" font-weight="700">SYSTEM API — Community Clinic (8 flows)</text>
   <text x="480" y="398" fill="#94A3B8" font-size="10">meditab-fhir-sys-api | 0.1 vCore</text>
   <text x="480" y="418" fill="#94A3B8" font-size="9">FHIR R4 | birthdate ge1940 le1959</text>
 
@@ -213,8 +213,8 @@ tr:hover td{background:rgba(0,161,224,0.03)}
 <h3>Integration Patterns Demonstrated</h3>
 <table>
 <tr><th>Pattern</th><th>Layer</th><th>What It Solves</th></tr>
-<tr><td>Scatter-Gather</td><td><span class="badge badge-orange">Process</span></td><td>Query CareStack + Meditab in parallel, merge results into unified view</td></tr>
-<tr><td>Choice Router</td><td><span class="badge badge-orange">Process</span></td><td>Route by patient ID prefix (cs-* → CareStack, mt-* → Meditab)</td></tr>
+<tr><td>Scatter-Gather</td><td><span class="badge badge-orange">Process</span></td><td>Query Flagship Hospital + Community Clinic FHIR R4 endpoints in parallel, merge results into unified view</td></tr>
+<tr><td>Choice Router</td><td><span class="badge badge-orange">Process</span></td><td>Route by patient ID prefix (cs-* → Flagship Hospital, mt-* → Community Clinic)</td></tr>
 <tr><td>DataWeave Transform</td><td><span class="badge badge-orange">Process</span></td><td>SNOMED→ICD-10 code normalization (13 mappings)</td></tr>
 <tr><td>Object Store</td><td><span class="badge badge-orange">Process</span></td><td>Patient ID cache (1000 entries, 3600s TTL)</td></tr>
 <tr><td>FHIR OperationOutcome</td><td><span class="badge badge-blue">System</span></td><td>Standard error handling per FHIR R4 spec</td></tr>
