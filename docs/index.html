@@ -360,13 +360,15 @@ form.addEventListener('submit', async e => {
           innerEl.appendChild(msgEl);
         }
 
-        if (evt.type === 'text' && evt.text) {
-          assistantText += evt.text;
+        // AI SDK v6 UIMessage stream: text-delta with delta field
+        if (evt.type === 'text-delta' && evt.delta) {
+          assistantText += evt.delta;
           textEl.textContent = assistantText;
           scrollDown();
         }
 
-        if (evt.type === 'tool-call') {
+        // Tool call start
+        if (evt.type === 'tool-input-start') {
           const name = evt.toolName || 'unknown';
           tools[evt.toolCallId] = name;
           const pill = document.createElement('span');
@@ -377,7 +379,8 @@ form.addEventListener('submit', async e => {
           scrollDown();
         }
 
-        if (evt.type === 'tool-result') {
+        // Tool output available
+        if (evt.type === 'tool-output-available') {
           const pill = document.getElementById('tool-' + evt.toolCallId);
           if (pill) {
             pill.className = 'tool-pill tool-pill--done';
