@@ -1,160 +1,135 @@
 # Healthcare Clinical Intelligence Agent
 
-An AI-powered clinical intelligence agent that queries patient data across multiple EHR systems simultaneously through MuleSoft's API-led connectivity layer and FHIR R4.
+Unified patient data across any number of EHR systems — queryable by AI in under 3 seconds.
 
-## What This Demonstrates
+## The Outcome
 
-A health system has two hospitals on different EHRs. **Flagship Hospital** runs one system, **Community Clinic** (recently acquired) runs another. Clinicians need a unified view across both — without ripping and replacing either EHR.
+A clinician asks: *"Show me all diabetic patients across both hospitals."*
 
-This demo solves that with three layers:
+The agent queries two separate EHR systems in parallel, normalizes the data, and returns a unified answer — with source facility, diagnosis codes, and care gap flags. The clinician doesn't know or care which EHR each hospital runs.
+
+**What this eliminates:**
+- Logging into multiple EHR systems to get a complete patient picture
+- Care gaps that hide in the seams between systems
+- 12-18 month integration timelines for each new EHR connection
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  AI Agent (Claude + tool calling)                   │
-│  Asks clinical questions, gets unified answers       │
+│  AI Agent                                           │
+│  Natural language → unified clinical answers         │
 ├─────────────────────────────────────────────────────┤
-│  Experience API (MuleSoft, CloudHub 2.0)            │
-│  Agent-facing tools: patients, conditions, labs,     │
+│  Experience API                                     │
+│  Tool endpoints: patients, conditions, labs,         │
 │  medications, allergies, FHIR discovery              │
 ├─────────────────────────────────────────────────────┤
-│  Process API (MuleSoft, CloudHub 2.0)               │
-│  Scatter-gather federation, SNOMED→ICD-10 mapping,   │
+│  Process API                                        │
+│  Parallel federation, code normalization,            │
 │  cross-system deduplication                          │
 ├──────────────────────┬──────────────────────────────┤
 │  System API A        │  System API B                │
 │  Flagship Hospital   │  Community Clinic             │
-│  (FHIR R4 adapter)   │  (FHIR R4 adapter)           │
+│  (FHIR R4)           │  (FHIR R4)                   │
 └──────────────────────┴──────────────────────────────┘
          │                        │
     Any FHIR R4 EHR         Any FHIR R4 EHR
-    (Epic, Cerner,          (MEDITECH, athena,
-     MEDITECH, etc.)         CareStack, etc.)
 ```
 
-## Why This Architecture Matters
+## What Changes vs. What Doesn't
 
-The System APIs are **generic FHIR R4 adapters**. They call standard FHIR endpoints (`/Patient`, `/Condition`, `/Observation`, `/MedicationRequest`, `/AllergyIntolerance`) that every FHIR R4-compliant EHR exposes.
+The System APIs use **standard FHIR R4 endpoints** — the same interface every compliant EHR exposes (Epic, Cerner, MEDITECH, athenahealth, etc.).
 
-- **Adding a new EHR** = build one new System API. Zero changes to Process, Experience, or AI layers.
-- **Swapping an EHR** = change one URL in `config.properties`. Everything above it works unchanged.
-- **The AI agent doesn't know** how many EHRs exist or what brands they are. It calls tools and gets unified answers.
+| When you need to... | What changes | What stays the same | Effort |
+|---------------------|-------------|-------------------|--------|
+| **Add a new facility** | One new System API | Process API, Experience API, AI Agent, frontend | ~2 weeks |
+| **Swap an EHR vendor** | One URL in config | Everything above the System API | Hours |
+| **Add a clinical capability** | One tool in the Experience API | System APIs, Process API | Days |
+| **Scale to 10 facilities** | 10 System APIs (same contract) | Process API, Experience API, AI Agent | Linear, not exponential |
 
-The demo uses two SMART Health IT sandbox FHIR servers (Synthea synthetic patients) to prove the pattern works across multiple systems. In production, these URLs point to real Epic, Cerner, or MEDITECH FHIR endpoints.
+## Accelerator Coverage
 
-## Architecture Components
+74% of the integration patterns map to existing MuleSoft Healthcare Accelerator v2.24 assets — pre-built, production-grade, and maintained:
 
-| Layer | App | What It Does |
-|-------|-----|-------------|
-| **System** | `carestack-fhir-sys-api` | FHIR R4 adapter for Flagship Hospital — normalizes patient data |
-| **System** | `meditab-fhir-sys-api` | FHIR R4 adapter for Community Clinic — identical contract, different EHR |
-| **Process** | `clinical-federation-prc-api` | Scatter-gather federation, SNOMED→ICD-10 mapping, unified response |
-| **Experience** | `agent-tools-exp-api` | AI-facing tool endpoints, FHIR server discovery |
-| **Frontend** | Next.js on Vercel | Chat UI + Slack bot, streams AI responses |
+| What the Accelerator provides | What's net-new in this implementation |
+|------------------------------|--------------------------------------|
+| FHIR R4 US Core API templates (Patient, Condition, Observation, Medication, Allergy) | AI agent tool endpoints (8 flows) |
+| EHR system API templates (Epic, Cerner, MEDITECH) | Scatter-gather federation logic |
+| SNOMED→ICD-10 DataWeave mappings | Experience API contract |
+| OAuth/SMART on FHIR auth modules | Slack bot integration |
+| CDS Services hooks | Streaming chat frontend |
 
-## Live Demo
+The Accelerator handles the interoperability plumbing. This implementation adds the intelligence layer on top.
 
-- **Chat UI:** [healthcare-agent-demo on Vercel](https://healthcare-agent-demo-vzrh.vercel.app)
-- **GitHub Pages:** [m9751.github.io/healthcare-agent-demo](https://m9751.github.io/healthcare-agent-demo/)
+## Try It
+
+- **Chat UI:** [healthcare-agent-demo-vzrh.vercel.app](https://healthcare-agent-demo-vzrh.vercel.app)
 - **Architecture Blueprint:** [m9751.github.io/healthcare-agent-demo/architecture.html](https://m9751.github.io/healthcare-agent-demo/architecture.html)
-- **Slack Bot:** `@Clinical Intelligence Agent` in workspace
+- **Slack Bot:** `@Clinical Intelligence Agent`
 
-## Prerequisites
+Data shown is synthetic (Synthea via SMART Health IT sandbox). In production, these same APIs point to your EHR FHIR endpoints.
 
-- **MuleSoft Anypoint Platform** account with CloudHub 2.0 access
-- **Maven 3.9+** and **Java 17+**
-- **Node.js 18+** for the frontend
-- **Vercel** account (for frontend deployment)
-- Access to FHIR R4 sandbox (or production FHIR endpoints)
+## Build Your Own
 
-## Build & Deploy
+### Prerequisites
 
-### 1. Clone the repo
+- MuleSoft Anypoint Platform with CloudHub 2.0
+- Maven 3.9+, Java 17+
+- Node.js 18+, Vercel account
+- FHIR R4 endpoint (sandbox or production)
+
+### 1. Build
 
 ```bash
-git clone https://github.com/m9751/healthcare-agent-demo.git
-cd healthcare-agent-demo
+# System APIs (one per facility)
+cd mulesoft/carestack-fhir-sys-api && mvn clean package -DskipTests
+cd ../meditab-fhir-sys-api && mvn clean package -DskipTests
+
+# Process API (federation layer)
+cd ../clinical-federation-prc-api && mvn clean package -DskipTests
+
+# Experience API (AI tool layer)
+cd ../agent-tools-exp-api && mvn clean package -DskipTests
 ```
 
-### 2. Build the Mule applications
-
-Each app is in `mulesoft/`. Build them in order (System → Process → Experience):
+### 2. Verify
 
 ```bash
-# System API A — Flagship Hospital
-cd mulesoft/carestack-fhir-sys-api
-mvn clean package -DskipTests
-
-# System API B — Community Clinic
-cd ../meditab-fhir-sys-api
-mvn clean package -DskipTests
-
-# Process API — Clinical Federation
-cd ../clinical-federation-prc-api
-mvn clean package -DskipTests
-
-# Experience API — Agent Tools
-cd ../agent-tools-exp-api
-mvn clean package -DskipTests
-```
-
-### 3. Verify each JAR before deploying
-
-```bash
-# Must show mule-artifact.json at both root and META-INF
+# JAR structure — must show mule-artifact.json
 unzip -l target/<app>-1.0.0-mule-application.jar | grep mule-artifact
 
-# Must show http.port=8081
+# Port — must be 8081 (only port CloudHub 2.0 exposes)
 unzip -p target/<app>-1.0.0-mule-application.jar config.properties | grep port
 ```
 
-### 4. Deploy to CloudHub 2.0
+### 3. Deploy to CloudHub 2.0
 
-For each app:
-1. Go to **Anypoint Runtime Manager**
-2. Click **Deploy Application** (or update existing)
-3. Upload the JAR file
-4. **Properties tab:** set `http.port` = `8081`
-5. Click **Deploy**
-6. Wait up to 3 minutes for startup
+Upload each JAR to Anypoint Runtime Manager. Set `http.port=8081` in Properties. Deploy in order: System APIs → Process API → Experience API. See `DEPLOYMENT_GOVERNANCE.md` for the full checklist.
 
-**Deploy order:** System APIs first, then Process API, then Experience API.
+### 4. Wire the layers
 
-**Critical rules:**
-- `http.port=8081` — the ONLY port CloudHub 2.0 exposes
-- Single deploy attempt. If it fails, read the logs before redeploying.
-- See `DEPLOYMENT_GOVERNANCE.md` for the full checklist.
-
-### 5. Update downstream URLs
-
-After deploying System APIs, update the Process API `config.properties`:
+Each layer's `config.properties` points to the layer below it:
 
 ```properties
-sysapi.carestack.host=<your-system-api-a-url>.cloudhub.io
-sysapi.meditab.host=<your-system-api-b-url>.cloudhub.io
+# Process API → System APIs
+sysapi.carestack.host=<system-api-a>.cloudhub.io
+sysapi.meditab.host=<system-api-b>.cloudhub.io
+
+# Experience API → Process API
+prcapi.clinical.host=<process-api>.cloudhub.io
 ```
 
-After deploying Process API, update Experience API `config.properties`:
-
-```properties
-prcapi.clinical.host=<your-process-api-url>.cloudhub.io
-```
-
-Rebuild and redeploy each time you change a config.
-
-### 6. Deploy the frontend
+### 5. Deploy the frontend
 
 ```bash
 npm install
-
-# Set your Experience API URL
-echo "ANYPOINT_EXPERIENCE_API_URL=https://<your-experience-api>.cloudhub.io" > .env.local
-
+echo "ANYPOINT_EXPERIENCE_API_URL=https://<experience-api>.cloudhub.io" > .env.local
 vercel --prod
 ```
 
-### 7. Connect your own EHRs
+### 6. Connect your EHRs
 
-To point a System API at a real EHR, edit its `config.properties`:
+Point any System API at your FHIR R4 endpoint:
 
 ```properties
 fhir.server.host=your-ehr-fhir-endpoint.com
@@ -163,25 +138,21 @@ fhir.server.protocol=HTTPS
 fhir.server.basePath=/fhir/r4
 ```
 
-Rebuild, deploy. **No changes needed** to Process API, Experience API, or frontend.
+Rebuild, deploy. No changes to Process API, Experience API, or frontend.
 
-To add a third EHR:
-1. Copy any System API directory
-2. Update `config.properties` with the new FHIR endpoint
-3. Add it to the Process API scatter-gather in `clinical-federation-prc-api.xml`
-4. Rebuild and deploy
+**Add a third facility:** Copy any System API, change the FHIR URL, add it to the Process API scatter-gather. Rebuild. Everything above it works unchanged.
 
-## Naming Convention
+## Implementation Notes
 
-Directory names (`carestack-fhir-sys-api`, `meditab-fhir-sys-api`) are internal artifact identifiers matching the CloudHub deployment. User-facing labels ("Flagship Hospital", "Community Clinic") reflect the demo scenario. When building your own, use names that match your facilities.
+Directory names (`carestack-fhir-sys-api`, `meditab-fhir-sys-api`) are artifact identifiers from the reference deployment. User-facing labels ("Flagship Hospital", "Community Clinic") represent the demo scenario. Rename to match your facilities.
 
-## Tech Stack
+## Stack
 
-- **MuleSoft Mule 4** — API-led connectivity, FHIR R4 integration
-- **CloudHub 2.0** — Managed runtime
-- **FHIR R4 / US Core STU7** — Healthcare interoperability standard
-- **AI SDK v6** — Streaming chat with tool calling
-- **Claude** — AI model via Vercel AI Gateway
-- **Next.js** — Frontend
-- **Vercel** — Hosting
-- **SMART Health IT Sandbox** — Synthetic FHIR data (Synthea)
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Integration | MuleSoft Mule 4, CloudHub 2.0 | API-led connectivity, FHIR R4 federation |
+| Standards | FHIR R4, US Core STU7, SMART on FHIR | EHR-agnostic interoperability |
+| Terminology | SNOMED CT → ICD-10-CM (DataWeave) | Cross-system code normalization |
+| AI | Claude, Vercel AI Gateway, AI SDK v6 | Natural language clinical queries |
+| Frontend | Next.js, Vercel | Chat UI, Slack bot, streaming responses |
+| Test Data | SMART Health IT Sandbox (Synthea) | Synthetic FHIR patients |
