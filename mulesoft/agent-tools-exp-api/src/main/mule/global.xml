@@ -7,7 +7,6 @@
   xsi:schemaLocation="
     http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
     http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
     http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
   <configuration-properties file="config.properties" doc:name="Configuration properties"/>
@@ -17,7 +16,11 @@
     <http:listener-connection host="0.0.0.0" port="${http.port}"/>
   </http:listener-config>
 
-  <!-- MCP shares HTTP_Listener_config on CloudHub (single port exposed) -->
+  <!-- Inbound: MCP transport listener — DISABLED until Phase 7
+  <http:listener-config name="MCP_HTTP_Listener_config" doc:name="MCP HTTP Listener config">
+    <http:listener-connection host="0.0.0.0" port="${mcp.port}"/>
+  </http:listener-config>
+  -->
 
   <!-- Outbound: calls Clinical Federation Process API -->
   <http:request-config name="Clinical_Federation_PRC_API_config" doc:name="Clinical Federation Process API">
