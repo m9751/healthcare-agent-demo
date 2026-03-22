@@ -87,9 +87,9 @@ async function callChatAPI(
     throw new Error(`Chat API returned ${res.status}: ${await res.text()}`);
   }
 
-  // Parse AI SDK v6 UIMessage stream format
-  // Format: type-prefix:json-value per line
-  // Text chunks use prefix "0:" with JSON string value
+  // Parse AI SDK v6 UIMessage SSE stream
+  // Format: "data: {json}\n\n" lines
+  // Text deltas: {"type":"text-delta","id":"0","delta":"chunk"}
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body from chat API");
 
@@ -106,19 +106,17 @@ async function callChatAPI(
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+      if (!line.startsWith("data: ")) continue;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr || jsonStr === "[DONE]") continue;
 
-      // AI SDK v6 UIMessage stream: text chunks are "0:\"text\""
-      if (trimmed.startsWith("0:")) {
-        try {
-          const text = JSON.parse(trimmed.slice(2));
-          if (typeof text === "string") {
-            textParts.push(text);
-          }
-        } catch {
-          // skip malformed lines
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.type === "text-delta" && parsed.delta) {
+          textParts.push(parsed.delta);
         }
+      } catch {
+        // skip non-JSON lines
       }
     }
   }
