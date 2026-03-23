@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns:mcp="http://www.mulesoft.org/schema/mule/mcp"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+    http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd">
+
+  <!-- MCP Server Configuration — v1.4.0 XML structure per docs.mulesoft.com/mcp-connector/latest -->
+  <mcp:server-config name="MCP_Server_config" doc:name="MCP Server config"
+    serverName="Healthcare Clinical Intelligence" serverVersion="1.0.0">
+    <mcp:streamable-http-server-connection listenerConfig="HTTP_Listener_config"/>
+  </mcp:server-config>
+
+  <!-- Tool: listAllPatients -->
+  <flow name="mcp-list-all-patients" doc:name="MCP Tool: listAllPatients">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="listAllPatients">
+      <mcp:description>List all patients from both Flagship Hospital and Community Clinic EHR systems via FHIR R4.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "required": []
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients" doc:name="GET patients"/>
+  </flow>
+
+  <!-- Tool: getPatientConditions -->
+  <flow name="mcp-get-patient-conditions" doc:name="MCP Tool: getPatientConditions">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="getPatientConditions">
+      <mcp:description>Get all conditions/diagnoses for a specific patient. Returns ICD-10 codes and descriptions.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient ID (e.g., cs-abc12345 for Flagship Hospital, mt-def67890 for Community Clinic)"
+          }
+        },
+        "required": ["patientId"]
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/conditions" doc:name="GET conditions">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: searchConditions -->
+  <flow name="mcp-search-conditions" doc:name="MCP Tool: searchConditions">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="searchConditions">
+      <mcp:description>Search for patients with a specific condition across both EHR systems. Accepts ICD-10 codes.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "ICD-10 or SNOMED code (e.g., E11.9 for Type 2 Diabetes)"
+          }
+        },
+        "required": ["code"]
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/conditions" doc:name="Search conditions">
+      <http:query-params><![CDATA[#[output application/java --- { "code": payload.code }]]]></http:query-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: getPatientLabs -->
+  <flow name="mcp-get-patient-labs" doc:name="MCP Tool: getPatientLabs">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="getPatientLabs">
+      <mcp:description>Get lab results for a patient. Returns LOINC-coded values with dates.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "patientId": { "type": "string", "description": "Patient ID" }
+        },
+        "required": ["patientId"]
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/observations" doc:name="GET labs">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: getPatientMedications -->
+  <flow name="mcp-get-patient-medications" doc:name="MCP Tool: getPatientMedications">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="getPatientMedications">
+      <mcp:description>Get active medications for a patient. Returns RxNorm codes and dosage.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "patientId": { "type": "string", "description": "Patient ID" }
+        },
+        "required": ["patientId"]
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/medications" doc:name="GET medications">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: getPatientAllergies -->
+  <flow name="mcp-get-patient-allergies" doc:name="MCP Tool: getPatientAllergies">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="getPatientAllergies">
+      <mcp:description>Get allergy records for a patient. Returns allergen, criticality, and reactions.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "patientId": { "type": "string", "description": "Patient ID" }
+        },
+        "required": ["patientId"]
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/patients/{patientId}/allergies" doc:name="GET allergies">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": payload.patientId }]]]></http:uri-params>
+    </http:request>
+  </flow>
+
+  <!-- Tool: discoverFhirServer -->
+  <flow name="mcp-discover-servers" doc:name="MCP Tool: discoverFhirServer">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="discoverFhirServer">
+      <mcp:description>Discover connected FHIR R4 EHR servers and their capabilities.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "required": []
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[payload.^raw]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+    <http:request config-ref="Clinical_Federation_PRC_API_config" method="GET"
+      path="${prcapi.clinical.basePath}/discover" doc:name="GET discover"/>
+  </flow>
+
+  <!-- Tool: healthCheck -->
+  <flow name="mcp-health-check" doc:name="MCP Tool: healthCheck">
+    <mcp:tool-listener config-ref="MCP_Server_config" name="healthCheck">
+      <mcp:description>Check the health status of the Clinical Intelligence API.</mcp:description>
+      <mcp:parameters-schema><![CDATA[{
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "required": []
+      }]]></mcp:parameters-schema>
+      <mcp:responses>
+        <mcp:text-tool-response-content text="#[output application/json --- { status: 'healthy', tools: 8, transport: 'Streamable HTTP' }]"/>
+      </mcp:responses>
+      <mcp:on-error-responses>
+        <mcp:text-tool-response-content text="#['Error: $(error.description)']"/>
+      </mcp:on-error-responses>
+    </mcp:tool-listener>
+  </flow>
+
+</mule>
