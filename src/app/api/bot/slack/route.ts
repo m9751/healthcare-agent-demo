@@ -171,14 +171,12 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
 
   // Verify Slack signature
-  // TODO: Re-enable after debugging — temporarily bypassed to test pipeline
   const valid = await verifySlackSignature(req, rawBody);
   if (!valid) {
-    console.warn("[slack-bot] Signature failed — bypassing for debug");
-    // return new Response("Invalid signature", {
-    //   status: 401,
-    //   headers: CORS_HEADERS,
-    // });
+    return new Response("Invalid signature", {
+      status: 401,
+      headers: CORS_HEADERS,
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
