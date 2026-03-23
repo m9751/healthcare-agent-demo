@@ -186,14 +186,8 @@ export async function POST(req: NextRequest) {
   if (body.type === "event_callback") {
     const event = body.event;
 
-    // Handle app_mention events and DM messages
-    if (
-      event?.type === "app_mention" ||
-      (event?.type === "message" &&
-        event.channel_type === "im" &&
-        !event.bot_id &&
-        !event.subtype)
-    ) {
+    // Only handle app_mention events
+    if (event?.type === "app_mention") {
       // Strip the bot mention from the message text
       // Slack mentions look like <@U12345678>
       const userMessage = (event.text as string)
