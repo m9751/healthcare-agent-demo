@@ -140,8 +140,9 @@ async function postToSlack(channel: string, text: string): Promise<void> {
   });
 
   const data = await res.json();
+  console.log("[slack-bot] postMessage response:", { ok: data.ok, error: data.error, channel });
   if (!data.ok) {
-    console.error("Slack postMessage failed:", data.error);
+    console.error("[slack-bot] Slack postMessage failed:", data.error);
   }
 }
 
@@ -207,10 +208,13 @@ export async function POST(req: NextRequest) {
       // chat API call + Slack reply happen in the background.
       after(async () => {
         try {
+          console.log("[slack-bot] after() started", { channel, userMessage, origin });
           const reply = await callChatAPI(origin, userMessage || "hello");
+          console.log("[slack-bot] chat reply received", { length: reply.length, preview: reply.slice(0, 100) });
           await postToSlack(channel, reply);
+          console.log("[slack-bot] postToSlack completed");
         } catch (err) {
-          console.error("Error processing app_mention:", err);
+          console.error("[slack-bot] Error processing app_mention:", err);
           await postToSlack(
             channel,
             `:warning: Sorry, I encountered an error processing your request.`
