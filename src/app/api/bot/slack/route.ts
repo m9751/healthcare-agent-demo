@@ -21,15 +21,24 @@ async function verifySlackSignature(
   rawBody: string
 ): Promise<boolean> {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
-  if (!signingSecret) return false;
+  if (!signingSecret) {
+    console.error("[slack-bot] SLACK_SIGNING_SECRET not set");
+    return false;
+  }
 
   const timestamp = req.headers.get("x-slack-request-timestamp");
   const slackSignature = req.headers.get("x-slack-signature");
-  if (!timestamp || !slackSignature) return false;
+  if (!timestamp || !slackSignature) {
+    console.error("[slack-bot] Missing headers", { timestamp: !!timestamp, signature: !!slackSignature });
+    return false;
+  }
 
   // Reject requests older than 5 minutes (replay protection)
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - Number(timestamp)) > 300) return false;
+  if (Math.abs(now - Number(timestamp)) > 300) {
+    console.error("[slack-bot] Stale timestamp", { now, timestamp, diff: Math.abs(now - Number(timestamp)) });
+    return false;
+  }
 
   const sigBasestring = `v0:${timestamp}:${rawBody}`;
 
@@ -52,12 +61,18 @@ async function verifySlackSignature(
   const computed = `v0=${hex}`;
 
   // Timing-safe comparison
-  if (computed.length !== slackSignature.length) return false;
+  if (computed.length !== slackSignature.length) {
+    console.error("[slack-bot] Signature length mismatch", { computed: computed.length, slack: slackSignature.length });
+    return false;
+  }
   const a = encoder.encode(computed);
   const b = encoder.encode(slackSignature);
   let mismatch = 0;
   for (let i = 0; i < a.length; i++) {
     mismatch |= a[i] ^ b[i];
+  }
+  if (mismatch !== 0) {
+    console.error("[slack-bot] Signature mismatch", { computed: computed.slice(0, 10) + "...", slack: slackSignature.slice(0, 10) + "..." });
   }
   return mismatch === 0;
 }
