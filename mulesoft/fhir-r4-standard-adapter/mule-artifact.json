@@ -1,5 +1,5 @@
 {
-  "name": "healthcare-mcp-server",
+  "name": "fhir-r4-standard-adapter",
   "minMuleVersion": "4.11.2",
   "javaSpecificationVersions": [
     "17"

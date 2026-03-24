@@ -1,7 +1,0 @@
-{
-  "name": "meditab-fhir-sys-api",
-  "minMuleVersion": "4.11.2",
-  "javaSpecificationVersions": [
-    "17"
-  ]
-}

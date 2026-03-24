@@ -15,8 +15,9 @@
     <http:listener-connection host="0.0.0.0" port="${http.port}"/>
   </http:listener-config>
 
-  <http:request-config name="FHIR_Meditab_Request_config" doc:name="FHIR Community Clinic Request config">
-    <http:request-connection host="${fhir.meditab.host}" port="${fhir.meditab.port}" protocol="HTTPS"/>
+  <!-- HTTP Request — configurable FHIR R4 target server -->
+  <http:request-config name="FHIR_Target_Request_config" doc:name="FHIR R4 Target Server config">
+    <http:request-connection host="${fhir.target.host}" port="${fhir.target.port}" protocol="HTTPS"/>
     <http:default-headers>
       <http:default-header key="Accept" value="application/fhir+json"/>
     </http:default-headers>

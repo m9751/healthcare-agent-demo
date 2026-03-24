@@ -17,11 +17,15 @@
     <http:listener-connection host="0.0.0.0" port="${http.port}"/>
   </http:listener-config>
 
-  <!-- HTTP Request (outbound — calls Flagship Hospital FHIR R4 server) -->
-  <http:request-config name="FHIR_CareStack_Request_config" doc:name="FHIR Flagship Hospital Request config">
-    <http:request-connection host="${fhir.carestack.host}" port="${fhir.carestack.port}" protocol="HTTPS"/>
+  <!-- HTTP Request (outbound — calls CareStack proprietary REST API) -->
+  <http:request-config name="CareStack_REST_Request_config" doc:name="CareStack REST API config">
+    <http:request-connection host="${carestack.host}" port="${carestack.port}" protocol="HTTPS"/>
     <http:default-headers>
-      <http:default-header key="Accept" value="application/fhir+json"/>
+      <http:default-header key="Content-Type" value="application/json"/>
+      <http:default-header key="Accept" value="application/json"/>
+      <http:default-header key="VendorKey" value="${carestack.auth.vendorKey}"/>
+      <http:default-header key="AccountKey" value="${carestack.auth.accountKey}"/>
+      <http:default-header key="AccountId" value="${carestack.auth.accountId}"/>
     </http:default-headers>
   </http:request-config>
 

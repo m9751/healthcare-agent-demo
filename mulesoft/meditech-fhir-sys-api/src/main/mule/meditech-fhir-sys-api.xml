@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns:os="http://www.mulesoft.org/schema/mule/os"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+    http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+  <!-- ============================================================
+       MEDITECH EXPANSE FHIR R4 SYSTEM API
+       Wraps the MEDITECH Greenfield FHIR R4 endpoint (US Core STU6).
+       Each flow = one FHIR resource operation.
+       Test patient: Sarai Mccall (0218f2d0-968b-5888-976f-68a554670f6e)
+       Clinical profile: CHF, angina, HTN, obesity, old MI
+
+       OAuth Pattern:
+       Every flow calls sub-flow "get-oauth-access-token" before
+       its FHIR http:request. The sub-flow sets vars.accessToken
+       (cached in Object Store, auto-refreshed via refresh_token grant).
+       The FHIR request injects it as: Authorization: Bearer {token}
+       ============================================================ -->
+
+  <!-- ─── GET /patients ─────────────────────────────────────────── -->
+  <!-- Returns the MEDITECH test patient by known ID -->
+  <flow name="get-patients" doc:name="GET /patients">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
+
+    <!-- Get fresh OAuth access token -->
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/Patient/${fhir.meditech.patient.id}" doc:name="FHIR GET Patient by ID">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+    </http:request>
+
+    <!-- Wrap single patient in a Bundle-like array for consistency with other System APIs -->
+    <ee:transform doc:name="Wrap in Bundle format">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          resourceType: "Bundle",
+          "type": "searchset",
+          total: 1,
+          entry: [{ resource: payload }]
+        }]]]></ee:set-payload>
+        <ee:set-attributes><![CDATA[#[output application/java --- {
+          "httpStatus": 200,
+          "headers": { "Content-Type": "application/fhir+json" }
+        }]]]></ee:set-attributes>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/conditions ──────────────────── -->
+  <flow name="get-patient-conditions" doc:name="GET /patients/{patientId}/conditions">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen GET conditions"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/Condition" doc:name="FHIR GET Condition">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "patient": attributes.uriParams.patientId,
+        "_count": "50",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /conditions?code={code} ──────────────────────────── -->
+  <flow name="search-conditions-by-code" doc:name="GET /conditions?code">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/conditions" allowedMethods="GET" doc:name="Listen GET conditions by code"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/Condition" doc:name="FHIR GET Condition by code">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "code": attributes.queryParams.code,
+        "patient": p('fhir.meditech.patient.id'),
+        "_count": "50",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/observations ───────────────── -->
+  <!-- MEDITECH returns vitals via Observation. Labs via DiagnosticReport (lab category returns 500). -->
+  <flow name="get-patient-observations" doc:name="GET /patients/{patientId}/observations">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen GET observations"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/Observation" doc:name="FHIR GET Observation">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "patient": attributes.uriParams.patientId,
+        "category": "vital-signs",
+        "_count": "30",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/diagnosticreports ──────────── -->
+  <!-- MEDITECH labs are in DiagnosticReport, not Observation?category=laboratory -->
+  <flow name="get-patient-diagnosticreports" doc:name="GET /patients/{patientId}/diagnosticreports">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients/{patientId}/diagnosticreports" allowedMethods="GET" doc:name="Listen GET diagnosticreports"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/DiagnosticReport" doc:name="FHIR GET DiagnosticReport">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "patient": attributes.uriParams.patientId,
+        "_count": "30",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/medications ────────────────── -->
+  <flow name="get-patient-medications" doc:name="GET /patients/{patientId}/medications">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen GET medications"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/MedicationRequest" doc:name="FHIR GET MedicationRequest">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "patient": attributes.uriParams.patientId,
+        "_count": "30",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/allergies ──────────────────── -->
+  <flow name="get-patient-allergies" doc:name="GET /patients/{patientId}/allergies">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen GET allergies"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/AllergyIntolerance" doc:name="FHIR GET AllergyIntolerance">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "patient": attributes.uriParams.patientId,
+        "_count": "30",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/encounters ─────────────────── -->
+  <flow name="get-patient-encounters" doc:name="GET /patients/{patientId}/encounters">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/patients/{patientId}/encounters" allowedMethods="GET" doc:name="Listen GET encounters"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/Encounter" doc:name="FHIR GET Encounter">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "patient": attributes.uriParams.patientId,
+        "_count": "30",
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /metadata (CapabilityStatement / Server Discovery) ── -->
+  <flow name="get-metadata" doc:name="GET /metadata">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/metadata" allowedMethods="GET" doc:name="Listen GET metadata"/>
+
+    <flow-ref name="get-oauth-access-token" doc:name="Get OAuth Token"/>
+
+    <http:request config-ref="FHIR_Meditech_Request_config" method="GET" path="${fhir.meditech.basePath}/metadata/" doc:name="FHIR GET CapabilityStatement">
+      <http:headers><![CDATA[#[output application/java --- {
+        "Authorization": "Bearer " ++ vars.accessToken
+      }]]]></http:headers>
+      <http:query-params><![CDATA[#[output application/java --- {
+        "_format": "json"
+      }]]]></http:query-params>
+    </http:request>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── POST /seed-token — One-time token seeding endpoint ──── -->
+  <!-- Call this ONCE after deploy with the refresh token in the body.
+       curl -X POST https://meditech-fhir-sys-api-.../api/v1/meditech/seed-token \
+         -H "Content-Type: text/plain" -d "REFRESH_TOKEN_HERE"
+       This stores the token in Object Store and does the first refresh.
+       After that, the app auto-refreshes every 14 minutes. -->
+  <flow name="seed-token" doc:name="POST /seed-token">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditech/seed-token" allowedMethods="POST" doc:name="Listen POST /seed-token"/>
+
+    <!-- Store the provided refresh token directly in Object Store -->
+    <os:store key="meditech_refresh_token"
+      objectStore="OAuth_Refresh_Token_Store"
+      failIfPresent="false"
+      doc:name="Store seed refresh token">
+      <os:value><![CDATA[#[payload]]]></os:value>
+    </os:store>
+
+    <logger level="INFO" message="#['OAuth: Seed refresh token stored. Length: ' ++ (sizeOf(payload default '') as String)]" doc:name="Log seed"/>
+
+    <!-- Now do the first refresh to prove it works -->
+    <flow-ref name="get-oauth-access-token" doc:name="Do first token refresh"/>
+
+    <ee:transform doc:name="Success response">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          status: "seeded",
+          message: "Refresh token stored and first access token obtained. Auto-refresh is now active.",
+          accessTokenPresent: vars.accessToken != null
+        }]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── FHIR OperationOutcome Error Handler ─────────────────── -->
+  <error-handler name="fhir-error-handler">
+    <on-error-propagate type="HTTP:CONNECTIVITY, HTTP:TIMEOUT">
+      <ee:transform doc:name="FHIR OperationOutcome - Connection Error">
+        <ee:message>
+          <ee:set-payload><![CDATA[#[output application/json --- {
+            resourceType: "OperationOutcome",
+            issue: [{
+              severity: "error",
+              code: "exception",
+              diagnostics: "MEDITECH Expanse FHIR server unreachable: " ++ (error.description default "Connection failed")
+            }]
+          }]]]></ee:set-payload>
+          <ee:set-attributes><![CDATA[#[{httpStatus: 502}]]]></ee:set-attributes>
+        </ee:message>
+      </ee:transform>
+    </on-error-propagate>
+    <on-error-propagate type="ANY">
+      <ee:transform doc:name="FHIR OperationOutcome - General Error">
+        <ee:message>
+          <ee:set-payload><![CDATA[#[output application/json --- {
+            resourceType: "OperationOutcome",
+            issue: [{
+              severity: "error",
+              code: "exception",
+              diagnostics: error.description default "An unexpected error occurred"
+            }]
+          }]]]></ee:set-payload>
+          <ee:set-attributes><![CDATA[#[{httpStatus: 500}]]]></ee:set-attributes>
+        </ee:message>
+      </ee:transform>
+    </on-error-propagate>
+  </error-handler>
+
+</mule>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns:os="http://www.mulesoft.org/schema/mule/os"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+    http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+  <!-- Configuration Properties -->
+  <configuration-properties file="config.properties" doc:name="Configuration properties"/>
+
+  <!-- ============================================================
+       OBJECT STORES
+       1. Access Token Store — TTL 840s (under MEDITECH's 899s expiry)
+       2. Refresh Token Store — NO TTL (persists until explicitly replaced)
+          Seeded from properties on first use, then updated every refresh.
+          Survives app restarts on CloudHub 2.0.
+       ============================================================ -->
+  <os:object-store name="OAuth_Access_Token_Store"
+    doc:name="OAuth Access Token Store"
+    persistent="true"
+    entryTtl="${fhir.meditech.oauth.tokenTtl}"
+    entryTtlUnit="SECONDS"
+    expirationInterval="30"
+    expirationIntervalUnit="SECONDS"/>
+
+  <os:object-store name="OAuth_Refresh_Token_Store"
+    doc:name="OAuth Refresh Token Store (no TTL — persists forever)"
+    persistent="true"
+    maxEntries="10"/>
+
+  <!-- HTTP Listener (inbound — receives requests from Process API) -->
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+    <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+  </http:listener-config>
+
+  <!-- HTTP Request (outbound — calls MEDITECH Expanse FHIR R4 server) -->
+  <http:request-config name="FHIR_Meditech_Request_config" doc:name="FHIR MEDITECH Expanse Request config">
+    <http:request-connection host="${fhir.meditech.host}" port="${fhir.meditech.port}" protocol="HTTPS"/>
+    <http:default-headers>
+      <http:default-header key="Accept" value="application/fhir+json"/>
+    </http:default-headers>
+  </http:request-config>
+
+  <!-- HTTP Request (outbound — calls MEDITECH OAuth token endpoint) -->
+  <http:request-config name="MEDITECH_Token_Request_config" doc:name="MEDITECH Token Endpoint config">
+    <http:request-connection host="${fhir.meditech.host}" port="443" protocol="HTTPS"/>
+  </http:request-config>
+
+  <!-- ============================================================
+       SUB-FLOW: get-oauth-access-token
+       ============================================================
+       Rotating Refresh Token Pattern:
+
+       1. Try Object Store for cached access token
+          - HIT → use it (no HTTP call)
+          - MISS → go to step 2
+
+       2. Get the current refresh token:
+          - Try Object Store first (has the latest rotated token)
+          - If not in OS, fall back to properties (initial seed)
+
+       3. POST to token endpoint with refresh_token grant
+
+       4. Save BOTH tokens:
+          - New access token → Access Token Store (TTL 840s)
+          - New refresh token → Refresh Token Store (no TTL)
+
+       This handles MEDITECH's rotating refresh tokens:
+       every refresh returns a NEW refresh token and invalidates
+       the old one. By saving to Object Store (persistent across
+       restarts), the app always has the latest valid token.
+       ============================================================ -->
+  <sub-flow name="get-oauth-access-token" doc:name="Get OAuth Access Token">
+
+    <!-- Step 1: Try cached access token -->
+    <try doc:name="Try cached access token">
+      <os:retrieve key="meditech_access_token"
+        objectStore="OAuth_Access_Token_Store"
+        target="accessToken"
+        doc:name="Retrieve cached access token"/>
+
+      <logger level="DEBUG" message="OAuth: Using cached access token" doc:name="Log cache hit"/>
+
+      <error-handler>
+        <on-error-continue type="OS:KEY_NOT_FOUND" doc:name="Access token expired or missing">
+          <logger level="INFO" message="OAuth: Access token expired. Refreshing..." doc:name="Log cache miss"/>
+
+          <!-- Step 2: Get current refresh token (Object Store first, then properties fallback) -->
+          <try doc:name="Try stored refresh token">
+            <os:retrieve key="meditech_refresh_token"
+              objectStore="OAuth_Refresh_Token_Store"
+              target="currentRefreshToken"
+              doc:name="Get latest refresh token from OS"/>
+            <logger level="INFO" message="OAuth: Using refresh token from Object Store" doc:name="Log OS refresh token"/>
+
+            <error-handler>
+              <on-error-propagate type="OS:KEY_NOT_FOUND" doc:name="No refresh token — must call /seed-token first">
+                <logger level="ERROR" message="OAuth: No refresh token in Object Store. Call POST /api/v1/meditech/seed-token first." doc:name="Log missing seed"/>
+                <ee:transform doc:name="Error: not seeded">
+                  <ee:message>
+                    <ee:set-payload><![CDATA[#[output application/json --- {
+                      resourceType: "OperationOutcome",
+                      issue: [{
+                        severity: "error",
+                        code: "security",
+                        diagnostics: "No refresh token available. Call POST /api/v1/meditech/seed-token with the refresh token to initialize OAuth."
+                      }]
+                    }]]]></ee:set-payload>
+                    <ee:set-attributes><![CDATA[#[{httpStatus: 401}]]]></ee:set-attributes>
+                  </ee:message>
+                </ee:transform>
+              </on-error-propagate>
+            </error-handler>
+          </try>
+
+          <!-- Step 3: Call token endpoint -->
+          <http:request config-ref="MEDITECH_Token_Request_config"
+            method="POST"
+            path="/oauth/token"
+            doc:name="POST refresh_token grant">
+            <http:body><![CDATA[#[output text/plain ---
+              "grant_type=refresh_token"
+              ++ "&refresh_token=" ++ vars.currentRefreshToken
+              ++ "&client_id=" ++ p('fhir.meditech.oauth.clientId')
+              ++ "&client_secret=" ++ p('fhir.meditech.oauth.clientSecret')
+            ]]]></http:body>
+            <http:headers><![CDATA[#[output application/java --- {
+              "Content-Type": "application/x-www-form-urlencoded"
+            }]]]></http:headers>
+          </http:request>
+
+          <!-- Step 4: Parse response and save BOTH tokens -->
+          <ee:transform doc:name="Extract tokens from response">
+            <ee:variables>
+              <ee:set-variable variableName="accessToken"><![CDATA[#[output application/java --- payload.access_token]]]></ee:set-variable>
+              <ee:set-variable variableName="newRefreshToken"><![CDATA[#[output application/java --- payload.refresh_token]]]></ee:set-variable>
+            </ee:variables>
+          </ee:transform>
+
+          <logger level="INFO"
+            message="#['OAuth: Tokens refreshed. New refresh token length: ' ++ (sizeOf(vars.newRefreshToken default '') as String)]"
+            doc:name="Log token refresh success"/>
+
+          <!-- Save new access token (TTL 840s) -->
+          <os:store key="meditech_access_token"
+            objectStore="OAuth_Access_Token_Store"
+            failIfPresent="false"
+            doc:name="Cache access token">
+            <os:value><![CDATA[#[vars.accessToken]]]></os:value>
+          </os:store>
+
+          <!-- Save new refresh token (no TTL — persists until next refresh) -->
+          <os:store key="meditech_refresh_token"
+            objectStore="OAuth_Refresh_Token_Store"
+            failIfPresent="false"
+            doc:name="Store rotated refresh token">
+            <os:value><![CDATA[#[vars.newRefreshToken]]]></os:value>
+          </os:store>
+
+        </on-error-continue>
+      </error-handler>
+    </try>
+
+  </sub-flow>
+
+</mule>

@@ -1,5 +1,5 @@
 {
-  "name": "meditab-fhir-sys-api",
+  "name": "carestack-fhir-sys-api",
   "minMuleVersion": "4.11.2",
   "javaSpecificationVersions": [
     "17"

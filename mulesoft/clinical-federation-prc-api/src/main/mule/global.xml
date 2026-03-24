@@ -25,6 +25,10 @@
     <http:request-connection host="${sysapi.meditab.host}" port="${sysapi.meditab.port}" protocol="${sysapi.meditab.protocol}"/>
   </http:request-config>
 
+  <http:request-config name="Meditech_Sys_API_config" doc:name="MEDITECH Community Hospital System API">
+    <http:request-connection host="${sysapi.meditech.host}" port="${sysapi.meditech.port}" protocol="${sysapi.meditech.protocol}"/>
+  </http:request-config>
+
   <os:object-store name="Patient_Registry" doc:name="Patient Registry"
     persistent="false" entryTtl="3600" entryTtlUnit="SECONDS" maxEntries="1000"/>
 

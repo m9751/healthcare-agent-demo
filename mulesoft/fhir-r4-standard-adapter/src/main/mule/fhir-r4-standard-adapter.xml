@@ -10,19 +10,20 @@
     http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
   <!-- ============================================================
-       COMMUNITY CLINIC FHIR R4 SYSTEM API
-       Identical contract to Flagship Hospital — proves API-led interchangeability.
-       Same endpoints, same FHIR resources, different EHR config.
-       Derived from: src/lib/system-api/meditab.ts
+       FHIR R4 STANDARD ADAPTER
+       Generic System API that connects to any FHIR R4 compliant server.
+       No DataWeave transforms — pure FHIR passthrough.
+       Change config.properties to point at any EHR:
+       Epic, Cerner/Oracle Health, Allscripts, eClinicalWorks, athenahealth, etc.
        ============================================================ -->
 
   <flow name="get-patients" doc:name="GET /patients">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/Patient" doc:name="FHIR GET Patient">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/Patient" doc:name="FHIR GET Patient">
       <http:query-params><![CDATA[#[output application/java --- {
-        "birthdate": "ge" ++ p('fhir.meditab.patient.birthdate.start'),
-        "birthdate": "le" ++ p('fhir.meditab.patient.birthdate.end'),
-        "_count": p('fhir.meditab.patient.count'),
+        "birthdate": "ge" ++ p('fhir.target.patient.birthdate.start'),
+        "birthdate": "le" ++ p('fhir.target.patient.birthdate.end'),
+        "_count": p('fhir.target.patient.count'),
         "_format": "json"
       }]]]></http:query-params>
     </http:request>
@@ -30,8 +31,8 @@
   </flow>
 
   <flow name="get-patient-conditions" doc:name="GET /patients/{patientId}/conditions">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen GET conditions"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/Condition" doc:name="FHIR GET Condition">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen GET conditions"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/Condition" doc:name="FHIR GET Condition">
       <http:query-params><![CDATA[#[output application/java --- {
         "patient": attributes.uriParams.patientId,
         "_count": "50",
@@ -42,8 +43,8 @@
   </flow>
 
   <flow name="search-conditions-by-code" doc:name="GET /conditions?code">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/conditions" allowedMethods="GET" doc:name="Listen GET conditions by code"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/Condition" doc:name="FHIR GET Condition by code">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/conditions" allowedMethods="GET" doc:name="Listen GET conditions by code"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/Condition" doc:name="FHIR GET Condition by code">
       <http:query-params><![CDATA[#[output application/java --- {
         "code": attributes.queryParams.code,
         "_count": "50",
@@ -54,8 +55,8 @@
   </flow>
 
   <flow name="get-patient-observations" doc:name="GET /patients/{patientId}/observations">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen GET observations"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/Observation" doc:name="FHIR GET Observation">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen GET observations"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/Observation" doc:name="FHIR GET Observation">
       <http:query-params><![CDATA[#[output application/java --- {
         "patient": attributes.uriParams.patientId,
         "category": "laboratory",
@@ -67,8 +68,8 @@
   </flow>
 
   <flow name="search-observations-by-code" doc:name="GET /observations?code">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/observations" allowedMethods="GET" doc:name="Listen GET observations by code"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/Observation" doc:name="FHIR GET Observation by LOINC">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/observations" allowedMethods="GET" doc:name="Listen GET observations by code"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/Observation" doc:name="FHIR GET Observation by LOINC">
       <http:query-params><![CDATA[#[output application/java --- {
         "code": "http://loinc.org|" ++ attributes.queryParams.code,
         "_count": "30",
@@ -79,8 +80,8 @@
   </flow>
 
   <flow name="get-patient-medications" doc:name="GET /patients/{patientId}/medications">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen GET medications"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/MedicationRequest" doc:name="FHIR GET MedicationRequest">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen GET medications"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/MedicationRequest" doc:name="FHIR GET MedicationRequest">
       <http:query-params><![CDATA[#[output application/java --- {
         "patient": attributes.uriParams.patientId,
         "_count": "30",
@@ -91,8 +92,8 @@
   </flow>
 
   <flow name="get-patient-allergies" doc:name="GET /patients/{patientId}/allergies">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen GET allergies"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/AllergyIntolerance" doc:name="FHIR GET AllergyIntolerance">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen GET allergies"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/AllergyIntolerance" doc:name="FHIR GET AllergyIntolerance">
       <http:query-params><![CDATA[#[output application/java --- {
         "patient": attributes.uriParams.patientId,
         "_count": "30",
@@ -103,8 +104,8 @@
   </flow>
 
   <flow name="get-metadata" doc:name="GET /metadata">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/meditab/metadata" allowedMethods="GET" doc:name="Listen GET metadata"/>
-    <http:request config-ref="FHIR_Meditab_Request_config" method="GET" path="/metadata" doc:name="FHIR GET CapabilityStatement">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/fhir/metadata" allowedMethods="GET" doc:name="Listen GET metadata"/>
+    <http:request config-ref="FHIR_Target_Request_config" method="GET" path="/metadata" doc:name="FHIR GET CapabilityStatement">
       <http:query-params><![CDATA[#[output application/java --- {
         "_format": "json"
       }]]]></http:query-params>
@@ -121,7 +122,7 @@
             issue: [{
               severity: "error",
               code: "exception",
-              diagnostics: "Community Clinic FHIR server unreachable: " ++ (error.description default "Connection failed")
+              diagnostics: "FHIR R4 target server unreachable: " ++ (error.description default "Connection failed")
             }]
           }]]]></ee:set-payload>
           <ee:set-attributes><![CDATA[#[{httpStatus: 502}]]]></ee:set-attributes>

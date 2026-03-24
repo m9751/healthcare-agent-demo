@@ -13,9 +13,9 @@
 
   <!-- ============================================================
        CLINICAL FEDERATION PROCESS API
-       Orchestrates across Flagship Hospital + Community Clinic System APIs.
+       Orchestrates across Flagship Hospital + Community Clinic + MEDITECH Community Hospital System APIs.
        Key MuleSoft patterns: Scatter-Gather, DataWeave, Object Store, Choice Router.
-       Derived from: src/lib/process-api/clinical-federation.ts (510 lines)
+       3 EHRs: cs- (Flagship Hospital), mt- (Community Clinic), mh- (MEDITECH Community Hospital)
        ============================================================ -->
 
   <!-- ─── GET /patients — Scatter-Gather Federation ──────────────── -->
@@ -24,8 +24,8 @@
   <flow name="get-all-patients" doc:name="GET /patients (Federated)">
     <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
 
-    <!-- Scatter-Gather: query both EHR systems in parallel -->
-    <scatter-gather doc:name="Query Flagship Hospital + Community Clinic in parallel">
+    <!-- Scatter-Gather: query all three EHR systems in parallel -->
+    <scatter-gather doc:name="Query Flagship Hospital + Community Clinic + MEDITECH in parallel">
       <route>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
           path="${sysapi.carestack.basePath}/patients" doc:name="Flagship Hospital GET patients"/>
@@ -33,6 +33,10 @@
       <route>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
           path="${sysapi.meditab.basePath}/patients" doc:name="Community Clinic GET patients"/>
+      </route>
+      <route>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/patients" doc:name="MEDITECH Community Hospital GET patients"/>
       </route>
     </scatter-gather>
 
@@ -65,46 +69,31 @@ var snomedToIcd10 = {
 // Extract FHIR Bundles from Scatter-Gather results
 var csBundle = payload."0".payload
 var mtBundle = payload."1".payload
+var mhBundle = payload."2".payload
 
-// Normalize Flagship Hospital patients (prefix: cs-)
-var csPatients = if (csBundle.entry != null)
-  (csBundle.entry map (entry) -> {
-    id: "cs-" ++ entry.resource.id[0 to 7],
-    resourceType: "Patient",
-    name: [{
-      given: (entry.resource.name[0].given default ["Unknown"]),
-      family: (entry.resource.name[0].family default "Unknown")
-    }],
-    birthDate: entry.resource.birthDate default "Unknown",
-    gender: entry.resource.gender default "unknown",
-    address: [{
-      city: (entry.resource.address[0].city default "Unknown"),
-      state: (entry.resource.address[0].state default "Unknown")
-    }],
-    source: "Flagship Hospital"
-  })
-  else []
-
-// Normalize Community Clinic patients (prefix: mt-)
-var mtPatients = if (mtBundle.entry != null)
-  (mtBundle.entry map (entry) -> {
-    id: "mt-" ++ entry.resource.id[0 to 7],
-    resourceType: "Patient",
-    name: [{
-      given: (entry.resource.name[0].given default ["Unknown"]),
-      family: (entry.resource.name[0].family default "Unknown")
-    }],
-    birthDate: entry.resource.birthDate default "Unknown",
-    gender: entry.resource.gender default "unknown",
-    address: [{
-      city: (entry.resource.address[0].city default "Unknown"),
-      state: (entry.resource.address[0].state default "Unknown")
-    }],
-    source: "Community Clinic"
-  })
+// Reusable patient normalizer
+fun normalizePatients(bundle, prefix, source) =
+  if (bundle.entry != null)
+    (bundle.entry map (entry) -> {
+      id: prefix ++ "-" ++ entry.resource.id[0 to 7],
+      resourceType: "Patient",
+      name: [{
+        given: (entry.resource.name[0].given default ["Unknown"]),
+        family: (entry.resource.name[0].family default "Unknown")
+      }],
+      birthDate: entry.resource.birthDate default "Unknown",
+      gender: entry.resource.gender default "unknown",
+      address: [{
+        city: (entry.resource.address[0].city default "Unknown"),
+        state: (entry.resource.address[0].state default "Unknown")
+      }],
+      source: source
+    })
   else []
 ---
-csPatients ++ mtPatients
+normalizePatients(csBundle, "cs", "Flagship Hospital")
+++ normalizePatients(mtBundle, "mt", "Community Clinic")
+++ normalizePatients(mhBundle, "mh", "MEDITECH Community Hospital")
 ]]]></ee:set-payload>
       </ee:message>
     </ee:transform>
@@ -134,12 +123,19 @@ csPatients ++ mtPatients
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mh-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/patients/{fhirId}/conditions" doc:name="MEDITECH GET conditions">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
       <otherwise>
         <ee:transform doc:name="Unknown prefix error">
           <ee:message>
             <ee:set-payload><![CDATA[#[output application/json --- {
               resourceType: "OperationOutcome",
-              issue: [{ severity: "error", code: "not-found", diagnostics: "Unknown patient prefix. Use cs- or mt-" }]
+              issue: [{ severity: "error", code: "not-found", diagnostics: "Unknown patient prefix. Use cs-, mt-, or mh-" }]
             }]]]></ee:set-payload>
             <ee:set-attributes><![CDATA[#[{httpStatus: 404}]]]></ee:set-attributes>
           </ee:message>
@@ -170,7 +166,9 @@ var snomedToIcd10 = {
   "162864005": { icd10: "R73.09", display: "Prediabetes" }
 }
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
+var source = if (patientId startsWith "cs-") "Flagship Hospital"
+  else if (patientId startsWith "mt-") "Community Clinic"
+  else "MEDITECH Community Hospital"
 ---
 if (payload.entry != null)
   (payload.entry map (entry) -> do {
@@ -199,7 +197,7 @@ else []
   <flow name="search-conditions-by-code" doc:name="GET /conditions?code (Federated)">
     <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/conditions" allowedMethods="GET" doc:name="Listen"/>
 
-    <scatter-gather doc:name="Search conditions across both EHRs">
+    <scatter-gather doc:name="Search conditions across all three EHRs">
       <route>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
           path="${sysapi.carestack.basePath}/conditions" doc:name="Flagship Hospital search conditions">
@@ -212,6 +210,12 @@ else []
           <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
         </http:request>
       </route>
+      <route>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/conditions" doc:name="MEDITECH search conditions">
+          <http:query-params><![CDATA[#[output application/java --- { "code": attributes.queryParams.code }]]]></http:query-params>
+        </http:request>
+      </route>
     </scatter-gather>
 
     <ee:transform doc:name="Merge + Normalize condition results">
@@ -221,6 +225,7 @@ else []
 output application/json
 var csResults = payload."0".payload
 var mtResults = payload."1".payload
+var mhResults = payload."2".payload
 
 fun normalizeEntry(entry, prefix, source) = {
   patientId: prefix ++ "-" ++ ((entry.resource.subject.reference splitBy "/")[-1])[0 to 7],
@@ -233,6 +238,8 @@ fun normalizeEntry(entry, prefix, source) = {
 (if (csResults.entry != null) (csResults.entry map normalizeEntry($, "cs", "Flagship Hospital")) else [])
 ++
 (if (mtResults.entry != null) (mtResults.entry map normalizeEntry($, "mt", "Community Clinic")) else [])
+++
+(if (mhResults.entry != null) (mhResults.entry map normalizeEntry($, "mh", "MEDITECH Community Hospital")) else [])
 ]]]></ee:set-payload>
       </ee:message>
     </ee:transform>
@@ -258,6 +265,13 @@ fun normalizeEntry(entry, prefix, source) = {
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mh-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/patients/{fhirId}/observations" doc:name="MEDITECH GET observations">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
     </choice>
     <ee:transform doc:name="Normalize lab results">
       <ee:message>
@@ -265,7 +279,9 @@ fun normalizeEntry(entry, prefix, source) = {
 %dw 2.0
 output application/json
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
+var source = if (patientId startsWith "cs-") "Flagship Hospital"
+  else if (patientId startsWith "mt-") "Community Clinic"
+  else "MEDITECH Community Hospital"
 ---
 if (payload.entry != null)
   (payload.entry filter ($.resource.valueQuantity.value != null) map (entry) -> {
@@ -302,6 +318,13 @@ else []
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mh-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/patients/{fhirId}/medications" doc:name="MEDITECH GET medications">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
     </choice>
     <ee:transform doc:name="Normalize medications">
       <ee:message>
@@ -309,7 +332,9 @@ else []
 %dw 2.0
 output application/json
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
+var source = if (patientId startsWith "cs-") "Flagship Hospital"
+  else if (patientId startsWith "mt-") "Community Clinic"
+  else "MEDITECH Community Hospital"
 ---
 if (payload.entry != null)
   (payload.entry map (entry) -> {
@@ -347,6 +372,13 @@ else []
           <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
         </http:request>
       </when>
+      <when expression="#[attributes.uriParams.patientId startsWith 'mh-']">
+        <set-variable variableName="fhirId" value="#[attributes.uriParams.patientId[3 to -1]]" doc:name="Extract FHIR ID"/>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/patients/{fhirId}/allergies" doc:name="MEDITECH GET allergies">
+          <http:uri-params><![CDATA[#[output application/java --- { "fhirId": vars.fhirId }]]]></http:uri-params>
+        </http:request>
+      </when>
     </choice>
     <ee:transform doc:name="Normalize allergies">
       <ee:message>
@@ -354,7 +386,9 @@ else []
 %dw 2.0
 output application/json
 var patientId = attributes.uriParams.patientId
-var source = if (patientId startsWith "cs-") "Flagship Hospital" else "Community Clinic"
+var source = if (patientId startsWith "cs-") "Flagship Hospital"
+  else if (patientId startsWith "mt-") "Community Clinic"
+  else "MEDITECH Community Hospital"
 ---
 if (payload.entry != null)
   (payload.entry map (entry) -> {
@@ -379,7 +413,7 @@ else []
   <!-- TS equivalent: discoverServers() lines 438-487 -->
   <flow name="discover-servers" doc:name="GET /discover">
     <http:listener config-ref="HTTP_Listener_config" path="/api/v1/clinical/discover" allowedMethods="GET" doc:name="Listen"/>
-    <scatter-gather doc:name="Query metadata from both EHRs">
+    <scatter-gather doc:name="Query metadata from all three EHRs">
       <route>
         <http:request config-ref="CareStack_Sys_API_config" method="GET"
           path="${sysapi.carestack.basePath}/metadata" doc:name="Flagship Hospital metadata"/>
@@ -387,6 +421,10 @@ else []
       <route>
         <http:request config-ref="Meditab_Sys_API_config" method="GET"
           path="${sysapi.meditab.basePath}/metadata" doc:name="Community Clinic metadata"/>
+      </route>
+      <route>
+        <http:request config-ref="Meditech_Sys_API_config" method="GET"
+          path="${sysapi.meditech.basePath}/metadata" doc:name="MEDITECH Community Hospital metadata"/>
       </route>
     </scatter-gather>
     <ee:transform doc:name="Format server discovery response">
@@ -396,6 +434,7 @@ else []
 output application/json
 var csCap = payload."0".payload
 var mtCap = payload."1".payload
+var mhCap = payload."2".payload
 
 fun serverInfo(cap, name) = {
   name: name,
@@ -406,7 +445,7 @@ fun serverInfo(cap, name) = {
   status: "connected"
 }
 ---
-[serverInfo(csCap, "Flagship Hospital"), serverInfo(mtCap, "Community Clinic")]
+[serverInfo(csCap, "Flagship Hospital"), serverInfo(mtCap, "Community Clinic"), serverInfo(mhCap, "MEDITECH Community Hospital")]
 ]]]></ee:set-payload>
       </ee:message>
     </ee:transform>

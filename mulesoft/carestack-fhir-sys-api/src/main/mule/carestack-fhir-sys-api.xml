@@ -10,26 +10,332 @@
     http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
   <!-- ============================================================
-       FLAGSHIP HOSPITAL FHIR R4 SYSTEM API
-       Wraps the Flagship Hospital EHR FHIR R4 endpoint with MuleSoft patterns.
-       Each flow = one FHIR resource operation.
-       Derived from: src/lib/system-api/carestack.ts
+       CARESTACK DENTAL PMS — SYSTEM API
+       Proprietary REST → FHIR R4 translation layer.
+
+       CareStack is a dental practice management system with a
+       custom REST API (JSON, 3-header API key auth). This System API
+       translates CareStack's proprietary data model into FHIR R4
+       responses so the Process API gets a uniform interface.
+
+       This is the demo's strongest differentiator:
+       "MuleSoft normalizes a non-FHIR dental PMS into the same
+       federated view as FHIR hospital EHRs."
+
+       CareStack API: https://api.carestack.com/api/v1.0
+       Auth: VendorKey + AccountKey + AccountId headers
+       OpenAPI spec: carestack-openapi-v1.json (214KB, 49 endpoints)
        ============================================================ -->
 
   <!-- ─── GET /patients ─────────────────────────────────────────── -->
-  <!-- TS equivalent: fetchPatients() in carestack.ts:38-44 -->
+  <!-- CareStack: POST /patients/search → FHIR: Bundle of Patient resources -->
   <flow name="get-patients" doc:name="GET /patients">
     <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients" allowedMethods="GET" doc:name="Listen GET /patients"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/Patient" doc:name="FHIR GET Patient">
+
+    <!-- CareStack uses POST for search, not GET -->
+    <ee:transform doc:name="Build CareStack search request">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          SearchTerm: "",
+          IncludeInactiveRecords: false,
+          Offset: 0,
+          Limit: p('carestack.patient.search.limit') as Number
+        }]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <http:request config-ref="CareStack_REST_Request_config" method="POST"
+      path="${carestack.basePath}/patients/search" doc:name="CareStack POST patients/search"/>
+
+    <!-- Transform CareStack PatientSearchResponseModel[] → FHIR Bundle -->
+    <ee:transform doc:name="CareStack Patients → FHIR Bundle">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+
+// CareStack gender values → FHIR gender codes
+var genderMap = {
+  "Male": "male",
+  "Female": "female",
+  "Other": "other"
+}
+
+var patients = payload.Results default payload default []
+---
+{
+  resourceType: "Bundle",
+  "type": "searchset",
+  total: sizeOf(patients),
+  entry: patients map (p) -> {
+    resource: {
+      resourceType: "Patient",
+      id: p.PatientId as String,
+      identifier: [{
+        "type": { coding: [{ system: "http://terminology.hl7.org/CodeSystem/v2-0203", code: "MR" }] },
+        value: p.PatientIdentifier as String default p.PatientId as String
+      }],
+      name: [{
+        family: p.LastName default "Unknown",
+        given: [p.FirstName default "Unknown"] ++ (if (p.MiddleName != null and p.MiddleName != "") [p.MiddleName] else [])
+      }],
+      gender: genderMap[p.Gender default ""] default "unknown",
+      birthDate: p.DOB default null,
+      address: if (p.AddressLine1 != null) [{
+        line: [p.AddressLine1] ++ (if (p.AddressLine2 != null and p.AddressLine2 != "") [p.AddressLine2] else []),
+        city: p.City default "Unknown",
+        state: p.State default "Unknown",
+        postalCode: p.ZipCode default ""
+      }] else [],
+      telecom: (
+        (if (p.PhoneWithExt != null and p.PhoneWithExt != "") [{ system: "phone", value: p.PhoneWithExt, use: "home" }] else [])
+        ++ (if (p.Email != null and p.Email != "") [{ system: "email", value: p.Email }] else [])
+      ),
+      active: p.IsActive default true
+    }
+  }
+}
+]]]></ee:set-payload>
+        <ee:set-attributes><![CDATA[#[output application/java --- {
+          "httpStatus": 200,
+          "headers": { "Content-Type": "application/fhir+json" }
+        }]]]></ee:set-attributes>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/conditions ──────────────────── -->
+  <!-- CareStack: GET /treatments/appointment-procedures/{appointmentId} → FHIR: Bundle of Condition
+       CareStack doesn't have a direct "conditions" endpoint. Dental conditions
+       come from treatment procedures and perio charting. We use perio charting
+       as the closest analog to medical conditions. -->
+  <flow name="get-patient-conditions" doc:name="GET /patients/{patientId}/conditions">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen GET conditions"/>
+
+    <http:request config-ref="CareStack_REST_Request_config" method="GET"
+      path="${carestack.basePath}/patients/{patientId}/periodontal-charting" doc:name="CareStack GET perio charting">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.uriParams.patientId }]]]></http:uri-params>
+    </http:request>
+
+    <!-- Transform CareStack PeriodontalChart → FHIR Condition Bundle -->
+    <ee:transform doc:name="CareStack Perio → FHIR Conditions">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+
+var patientId = attributes.uriParams.patientId
+var chart = payload default {}
+var conditions = chart.Conditions default []
+---
+{
+  resourceType: "Bundle",
+  "type": "searchset",
+  total: sizeOf(conditions),
+  entry: conditions map (c, idx) -> {
+    resource: {
+      resourceType: "Condition",
+      id: patientId ++ "-cond-" ++ (idx as String),
+      subject: { reference: "Patient/" ++ patientId },
+      code: {
+        coding: [{
+          system: "http://snomed.info/sct",
+          code: c.ConditionCode default "unknown",
+          display: c.Description default c.Name default "Dental condition"
+        }],
+        text: c.Description default c.Name default "Dental condition"
+      },
+      clinicalStatus: {
+        coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-clinical", code: "active" }]
+      },
+      category: [{
+        coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-category", code: "encounter-diagnosis" }],
+        text: "Dental"
+      }]
+    }
+  }
+}
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /conditions?code={code} ──────────────────────────── -->
+  <!-- CareStack has no condition search by code — return empty bundle -->
+  <flow name="search-conditions-by-code" doc:name="GET /conditions?code">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/conditions" allowedMethods="GET" doc:name="Listen GET conditions by code"/>
+    <ee:transform doc:name="Empty FHIR Bundle (no code search in CareStack)">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          resourceType: "Bundle",
+          "type": "searchset",
+          total: 0,
+          entry: []
+        }]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/observations ───────────────── -->
+  <!-- CareStack: GET /patients/{patientId}/periodontal-charting → FHIR Observation
+       Perio measurements (pocket depths, recession, bleeding) map to Observations -->
+  <flow name="get-patient-observations" doc:name="GET /patients/{patientId}/observations">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen GET observations"/>
+
+    <http:request config-ref="CareStack_REST_Request_config" method="GET"
+      path="${carestack.basePath}/patients/{patientId}/periodontal-charting" doc:name="CareStack GET perio charting">
+      <http:uri-params><![CDATA[#[output application/java --- { "patientId": attributes.uriParams.patientId }]]]></http:uri-params>
+    </http:request>
+
+    <!-- Transform perio measurements → FHIR Observations -->
+    <ee:transform doc:name="CareStack Perio → FHIR Observations">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+
+var patientId = attributes.uriParams.patientId
+var chart = payload default {}
+var teeth = chart.Teeth default []
+---
+{
+  resourceType: "Bundle",
+  "type": "searchset",
+  total: sizeOf(teeth),
+  entry: teeth map (tooth, idx) -> {
+    resource: {
+      resourceType: "Observation",
+      id: patientId ++ "-obs-" ++ (idx as String),
+      status: "final",
+      category: [{
+        coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "exam", display: "Exam" }]
+      }],
+      code: {
+        coding: [{ system: "http://loinc.org", code: "34552-0", display: "Periodontal assessment" }],
+        text: "Periodontal charting — Tooth " ++ (tooth.ToothNumber default tooth.Tooth default "?")
+      },
+      subject: { reference: "Patient/" ++ patientId },
+      valueString: "Tooth " ++ (tooth.ToothNumber default tooth.Tooth default "?")
+        ++ (if (tooth.PocketDepth != null) " PD:" ++ (tooth.PocketDepth as String) else "")
+        ++ (if (tooth.Recession != null) " Rec:" ++ (tooth.Recession as String) else "")
+        ++ (if (tooth.Mobility != null) " Mob:" ++ (tooth.Mobility as String) else "")
+    }
+  }
+}
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/medications ────────────────── -->
+  <!-- CareStack: GET /treatments/appointment-procedures → treatment codes
+       Dental treatments with procedure codes map loosely to MedicationRequest
+       (prescribed treatments, not medications per se) -->
+  <flow name="get-patient-medications" doc:name="GET /patients/{patientId}/medications">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen GET medications"/>
+
+    <!-- CareStack sync endpoint returns treatment procedures for a patient -->
+    <http:request config-ref="CareStack_REST_Request_config" method="GET"
+      path="${carestack.basePath}/sync/treatment-procedures" doc:name="CareStack GET treatment procedures">
       <http:query-params><![CDATA[#[output application/java --- {
-        "birthdate": "ge" ++ p('fhir.carestack.patient.birthdate.start'),
-        "birthdate": "le" ++ p('fhir.carestack.patient.birthdate.end'),
-        "_count": p('fhir.carestack.patient.count'),
-        "_format": "json"
+        "limit": "30"
       }]]]></http:query-params>
     </http:request>
-    <ee:transform doc:name="Set FHIR Content-Type">
+
+    <!-- Transform CareStack treatments → FHIR MedicationRequest Bundle -->
+    <ee:transform doc:name="CareStack Treatments → FHIR MedicationRequest">
       <ee:message>
+        <ee:set-payload><![CDATA[#[
+%dw 2.0
+output application/json
+
+var patientId = attributes.uriParams.patientId
+var procedures = (payload.Results default []) filter ($.PatientId as String == patientId)
+---
+{
+  resourceType: "Bundle",
+  "type": "searchset",
+  total: sizeOf(procedures),
+  entry: procedures map (proc) -> {
+    resource: {
+      resourceType: "MedicationRequest",
+      id: proc.Id as String default "unknown",
+      status: if (proc.StatusId == "Completed") "completed"
+              else if (proc.StatusId == "Planned") "active"
+              else "unknown",
+      intent: "order",
+      subject: { reference: "Patient/" ++ patientId },
+      medicationCodeableConcept: {
+        coding: [{
+          system: "http://www.ada.org/cdt",
+          code: proc.ProcedureCodeId as String default "unknown",
+          display: "Dental procedure " ++ (proc.ProcedureCodeId as String default "?")
+        }],
+        text: "Dental procedure " ++ (proc.ProcedureCodeId as String default "?")
+      },
+      authoredOn: proc.DateOfService default proc.ProposedDate default null
+    }
+  }
+}
+]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /patients/{patientId}/allergies ──────────────────── -->
+  <!-- CareStack has no allergy endpoint — return empty FHIR Bundle -->
+  <flow name="get-patient-allergies" doc:name="GET /patients/{patientId}/allergies">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen GET allergies"/>
+    <ee:transform doc:name="Empty FHIR Bundle (no allergy data in CareStack dental PMS)">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          resourceType: "Bundle",
+          "type": "searchset",
+          total: 0,
+          entry: [],
+          _note: "CareStack is a dental PMS — allergy data is typically maintained in the patient's medical EHR, not the dental practice management system."
+        }]]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler ref="fhir-error-handler"/>
+  </flow>
+
+  <!-- ─── GET /metadata (CapabilityStatement / Server Discovery) ── -->
+  <!-- Synthetic CapabilityStatement describing this adapter's capabilities -->
+  <flow name="get-metadata" doc:name="GET /metadata">
+    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/metadata" allowedMethods="GET" doc:name="Listen GET metadata"/>
+    <ee:transform doc:name="Synthetic FHIR CapabilityStatement for CareStack">
+      <ee:message>
+        <ee:set-payload><![CDATA[#[output application/json --- {
+          resourceType: "CapabilityStatement",
+          status: "active",
+          kind: "instance",
+          software: {
+            name: "CareStack Dental PMS (via MuleSoft FHIR Adapter)",
+            version: "1.0.0"
+          },
+          fhirVersion: "4.0.1",
+          format: ["json"],
+          rest: [{
+            mode: "server",
+            resource: [
+              { "type": "Patient", interaction: [{ code: "read" }, { code: "search-type" }] },
+              { "type": "Condition", interaction: [{ code: "search-type" }] },
+              { "type": "Observation", interaction: [{ code: "search-type" }] },
+              { "type": "MedicationRequest", interaction: [{ code: "search-type" }] }
+            ]
+          }],
+          description: "FHIR R4 adapter for CareStack Dental Practice Management System. Translates CareStack proprietary REST API (49 endpoints, 92 schemas) into FHIR-compatible responses. Auth: 3-header API key (VendorKey, AccountKey, AccountId). Native endpoints: Patient search, appointments, treatments, periodontal charting, insurance (Member/MembershipPlan/PlanSubscription), payments, procedure codes."
+        }]]]></ee:set-payload>
         <ee:set-attributes><![CDATA[#[output application/java --- {
           "httpStatus": 200,
           "headers": { "Content-Type": "application/fhir+json" }
@@ -39,105 +345,7 @@
     <error-handler ref="fhir-error-handler"/>
   </flow>
 
-  <!-- ─── GET /patients/{patientId}/conditions ──────────────────── -->
-  <!-- TS equivalent: fetchConditions(patientFhirId) in carestack.ts:48-52 -->
-  <flow name="get-patient-conditions" doc:name="GET /patients/{patientId}/conditions">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/conditions" allowedMethods="GET" doc:name="Listen GET conditions"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/Condition" doc:name="FHIR GET Condition">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "patient": attributes.uriParams.patientId,
-        "_count": "50",
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
-  <!-- ─── GET /conditions?code={code} ──────────────────────────── -->
-  <!-- TS equivalent: fetchConditionsByCode(snomedOrSearchCode) in carestack.ts:54-58 -->
-  <flow name="search-conditions-by-code" doc:name="GET /conditions?code">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/conditions" allowedMethods="GET" doc:name="Listen GET conditions by code"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/Condition" doc:name="FHIR GET Condition by code">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "code": attributes.queryParams.code,
-        "_count": "50",
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
-  <!-- ─── GET /patients/{patientId}/observations ───────────────── -->
-  <!-- TS equivalent: fetchObservations(patientFhirId) in carestack.ts:62-66 -->
-  <flow name="get-patient-observations" doc:name="GET /patients/{patientId}/observations">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/observations" allowedMethods="GET" doc:name="Listen GET observations"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/Observation" doc:name="FHIR GET Observation">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "patient": attributes.uriParams.patientId,
-        "category": "laboratory",
-        "_count": "30",
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
-  <!-- ─── GET /observations?code={loincCode} ───────────────────── -->
-  <!-- TS equivalent: fetchObservationsByCode(loincCode) in carestack.ts:68-72 -->
-  <flow name="search-observations-by-code" doc:name="GET /observations?code">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/observations" allowedMethods="GET" doc:name="Listen GET observations by code"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/Observation" doc:name="FHIR GET Observation by LOINC">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "code": "http://loinc.org|" ++ attributes.queryParams.code,
-        "_count": "30",
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
-  <!-- ─── GET /patients/{patientId}/medications ────────────────── -->
-  <!-- TS equivalent: fetchMedications(patientFhirId) in carestack.ts:76-80 -->
-  <flow name="get-patient-medications" doc:name="GET /patients/{patientId}/medications">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/medications" allowedMethods="GET" doc:name="Listen GET medications"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/MedicationRequest" doc:name="FHIR GET MedicationRequest">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "patient": attributes.uriParams.patientId,
-        "_count": "30",
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
-  <!-- ─── GET /patients/{patientId}/allergies ──────────────────── -->
-  <!-- TS equivalent: fetchAllergies(patientFhirId) in carestack.ts:84-88 -->
-  <flow name="get-patient-allergies" doc:name="GET /patients/{patientId}/allergies">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/patients/{patientId}/allergies" allowedMethods="GET" doc:name="Listen GET allergies"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/AllergyIntolerance" doc:name="FHIR GET AllergyIntolerance">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "patient": attributes.uriParams.patientId,
-        "_count": "30",
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
-  <!-- ─── GET /metadata (CapabilityStatement / Server Discovery) ── -->
-  <!-- TS equivalent: fetchCapabilityStatement() in carestack.ts:92-94 -->
-  <flow name="get-metadata" doc:name="GET /metadata">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/v1/carestack/metadata" allowedMethods="GET" doc:name="Listen GET metadata"/>
-    <http:request config-ref="FHIR_CareStack_Request_config" method="GET" path="/metadata" doc:name="FHIR GET CapabilityStatement">
-      <http:query-params><![CDATA[#[output application/java --- {
-        "_format": "json"
-      }]]]></http:query-params>
-    </http:request>
-    <error-handler ref="fhir-error-handler"/>
-  </flow>
-
   <!-- ─── FHIR OperationOutcome Error Handler ─────────────────── -->
-  <!-- Returns errors in FHIR-compliant OperationOutcome format -->
   <error-handler name="fhir-error-handler">
     <on-error-propagate type="HTTP:CONNECTIVITY, HTTP:TIMEOUT">
       <ee:transform doc:name="FHIR OperationOutcome - Connection Error">
@@ -147,10 +355,25 @@
             issue: [{
               severity: "error",
               code: "exception",
-              diagnostics: "Flagship Hospital FHIR server unreachable: " ++ (error.description default "Connection failed")
+              diagnostics: "CareStack REST API unreachable: " ++ (error.description default "Connection failed")
             }]
           }]]]></ee:set-payload>
           <ee:set-attributes><![CDATA[#[{httpStatus: 502}]]]></ee:set-attributes>
+        </ee:message>
+      </ee:transform>
+    </on-error-propagate>
+    <on-error-propagate type="HTTP:UNAUTHORIZED">
+      <ee:transform doc:name="FHIR OperationOutcome - Auth Error">
+        <ee:message>
+          <ee:set-payload><![CDATA[#[output application/json --- {
+            resourceType: "OperationOutcome",
+            issue: [{
+              severity: "error",
+              code: "security",
+              diagnostics: "CareStack API authentication failed. Check VendorKey, AccountKey, and AccountId properties."
+            }]
+          }]]]></ee:set-payload>
+          <ee:set-attributes><![CDATA[#[{httpStatus: 401}]]]></ee:set-attributes>
         </ee:message>
       </ee:transform>
     </on-error-propagate>
