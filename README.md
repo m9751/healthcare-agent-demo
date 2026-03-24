@@ -4,14 +4,15 @@ Unified patient data across any number of EHR systems — queryable by AI in und
 
 ## The Outcome
 
-A clinician asks: *"Show me all diabetic patients across both hospitals."*
+A clinician asks: *"Show me all patients across all three facilities."*
 
-The agent queries two separate EHR systems in parallel, normalizes the data, and returns a unified answer — with source facility, diagnosis codes, and care gap flags. The clinician doesn't know or care which EHR each hospital runs.
+The agent queries three separate EHR systems in parallel — a dental PMS, a community hospital, and a generic FHIR server — normalizes the data, and returns a unified answer with source facility, diagnosis codes, and care gap flags. The clinician doesn't know or care which EHR each facility runs.
 
 **What this eliminates:**
 - Logging into multiple EHR systems to get a complete patient picture
 - Care gaps that hide in the seams between systems
 - 12-18 month integration timelines for each new EHR connection
+- Custom integration code for non-FHIR systems (MuleSoft handles the translation)
 
 ## Architecture
 
@@ -20,32 +21,43 @@ The agent queries two separate EHR systems in parallel, normalizes the data, and
 │  AI Agent                                           │
 │  Natural language → unified clinical answers         │
 ├─────────────────────────────────────────────────────┤
-│  Experience API                                     │
+│  Experience API        (agent-tools-exp-api)        │
 │  Tool endpoints: patients, conditions, labs,         │
 │  medications, allergies, FHIR discovery              │
 ├─────────────────────────────────────────────────────┤
-│  Process API                                        │
-│  Parallel federation, code normalization,            │
+│  Process API           (clinical-federation-prc-api)│
+│  3-EHR scatter-gather, code normalization,           │
 │  cross-system deduplication                          │
-├──────────────────────┬──────────────────────────────┤
-│  System API A        │  System API B                │
-│  Flagship Hospital   │  Community Clinic             │
-│  (FHIR R4)           │  (FHIR R4)                   │
-└──────────────────────┴──────────────────────────────┘
-         │                        │
-    Any FHIR R4 EHR         Any FHIR R4 EHR
+├────────────────┬────────────────┬────────────────────┤
+│  System API    │  System API    │  System API         │
+│  CareStack     │  FHIR R4       │  MEDITECH           │
+│  Dental PMS    │  Standard      │  Expanse            │
+│  (REST → FHIR) │  Adapter       │  (OAuth + FHIR)     │
+└────────────────┴────────────────┴────────────────────┘
+       │                 │                  │
+  CareStack API    Any FHIR R4 EHR    MEDITECH Greenfield
+  (proprietary)    (configurable)      (US Core STU6)
 ```
+
+### Three Integration Patterns, One Uniform Contract
+
+| System API | Target EHR | API Type | Auth | DataWeave | Demo Story |
+|-----------|-----------|----------|------|-----------|------------|
+| `carestack-fhir-sys-api` | CareStack Dental PMS | Proprietary REST (49 endpoints) | 3-header API key | Heavy — translates custom JSON → FHIR | Non-FHIR system normalized into the federation |
+| `fhir-r4-standard-adapter` | Any FHIR R4 server | FHIR R4 passthrough | Configurable | None — pure passthrough | Plug-and-play for any compliant EHR |
+| `meditech-fhir-sys-api` | MEDITECH Expanse | FHIR R4 US Core STU6 | OAuth 2.0 (rotating refresh tokens) | Light — Bundle wrapper | Real EHR with production-grade auth |
+
+The Process API doesn't know or care about these differences. It gets FHIR Bundles from all three.
 
 ## What Changes vs. What Doesn't
 
-The System APIs use **standard FHIR R4 endpoints** — the same interface every compliant EHR exposes (Epic, Cerner, MEDITECH, athenahealth, etc.).
-
 | When you need to... | What changes | What stays the same | Effort |
 |---------------------|-------------|-------------------|--------|
-| **Add a new facility** | One new System API | Process API, Experience API, AI Agent, frontend | ~2 weeks |
+| **Add a FHIR facility** | Copy `fhir-r4-standard-adapter`, change one URL | Process API, Experience API, AI Agent, frontend | Hours |
+| **Add a non-FHIR system** | New System API with DataWeave transforms | Process API, Experience API, AI Agent, frontend | ~2 weeks |
 | **Swap an EHR vendor** | One URL in config | Everything above the System API | Hours |
 | **Add a clinical capability** | One tool in the Experience API | System APIs, Process API | Days |
-| **Scale to 10 facilities** | 10 System APIs (same contract) | Process API, Experience API, AI Agent | Linear, not exponential |
+| **Scale to 10 facilities** | 10 System APIs (same contract) | Process API scatter-gather, Experience API, AI Agent | Linear, not exponential |
 
 ## Accelerator Coverage
 
@@ -55,39 +67,46 @@ The System APIs use **standard FHIR R4 endpoints** — the same interface every 
 |------------------------------|--------------------------------------|
 | FHIR R4 US Core API templates (Patient, Condition, Observation, Medication, Allergy) | AI agent tool endpoints (8 flows) |
 | EHR system API templates (Epic, Cerner, MEDITECH) | Scatter-gather federation logic |
-| SNOMED→ICD-10 DataWeave mappings | Experience API contract |
-| OAuth/SMART on FHIR auth modules | Slack bot integration |
-| CDS Services hooks | Streaming chat frontend |
+| SNOMED→ICD-10 DataWeave mappings | CareStack proprietary REST → FHIR transforms |
+| OAuth/SMART on FHIR auth modules | MEDITECH rotating refresh token management |
+| CDS Services hooks | Streaming chat frontend + Slack bot |
 
 The Accelerator handles the interoperability plumbing. This implementation adds the intelligence layer on top.
 
 ## Demo Data
 
-This demo connects to the **SMART Health IT public FHIR R4 sandbox** — an open-source test environment maintained by Boston Children's Hospital and used industry-wide for FHIR development. It serves synthetic patient data generated by **Synthea**, a patient simulator from MITRE.
+- **FHIR R4 Standard Adapter** connects to the **SMART Health IT public FHIR R4 sandbox** — synthetic patients from Synthea (Boston Children's Hospital / MITRE)
+- **MEDITECH System API** connects to **MEDITECH Greenfield Workspace** — sandbox with test patient Sarai Mccall (cardiac profile: CHF, angina, HTN, obesity, old MI, 10 medications)
+- **CareStack System API** returns synthetic dental data via its CapabilityStatement (sandbox keys pending NDA)
 
-The two System APIs each connect to a separate patient cohort on this sandbox, simulating two independent EHR systems — the same way Flagship Hospital and Community Clinic would each have their own FHIR endpoint in production.
+### Current Federation Output
 
-### Connecting to your EHRs
+```
+21 patients from 3 EHRs:
+  Flagship Hospital:            10 patients (FHIR sandbox cohort 1960-1980)
+  Community Clinic:             10 patients (FHIR sandbox cohort 1940-1959)
+  MEDITECH Community Hospital:   1 patient  (Sarai Mccall — real MEDITECH Expanse)
+```
 
-To point this at your systems, you change one URL per facility in `config.properties`:
+## CloudHub 2.0 Deployment
 
-| EHR | FHIR R4 Endpoint |
-|-----|-----------------|
-| Epic | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` |
-| Oracle Health (Cerner) | `fhir-open.cerner.com/r4/{your-tenant-id}` |
-| MEDITECH Expanse | Your Greenfield portal endpoint |
-| CareStack | Your provisioned FHIR endpoint |
-| athenahealth | Your developer portal endpoint |
+All 5 apps running on Anypoint CloudHub 2.0 Shared Space (Mule 4.11.2, Micro replicas):
 
-One URL change per facility. The Process API, Experience API, AI agent, and frontend stay exactly the same.
+| App | Layer | CloudHub URL |
+|-----|-------|-------------|
+| `agent-tools-exp-api` | Experience | `agent-tools-exp-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io` |
+| `clinical-federation-prc-api` | Process | `clinical-federation-prc-api-sewtob.5sc6y6-4.usa-e2.cloudhub.io` |
+| `carestack-fhir-sys-api` | System | `carestack-fhir-sys-api-sewtob.5sc6y6-1.usa-e2.cloudhub.io` |
+| `fhir-r4-standard-adapter` | System | `fhir-r4-standard-adapter-sewtob.5sc6y6-1.usa-e2.cloudhub.io` |
+| `meditech-fhir-sys-api` | System | `meditech-fhir-sys-api-sewtob.5sc6y6-2.usa-e2.cloudhub.io` |
+
+Anypoint Visualizer auto-discovers the topology from live traffic.
 
 ## Try It
 
 - **Chat UI:** [healthcare-agent-demo-vzrh.vercel.app](https://healthcare-agent-demo-vzrh.vercel.app)
 - **Architecture Blueprint:** [m9751.github.io/healthcare-agent-demo/architecture.html](https://m9751.github.io/healthcare-agent-demo/architecture.html)
 - **Slack Bot:** `@Clinical Intelligence Agent`
-
-Data shown is synthetic (Synthea via SMART Health IT sandbox). In production, these same APIs point to your EHR FHIR endpoints.
 
 ## Build Your Own
 
@@ -103,7 +122,8 @@ Data shown is synthetic (Synthea via SMART Health IT sandbox). In production, th
 ```bash
 # System APIs (one per facility)
 cd mulesoft/carestack-fhir-sys-api && mvn clean package -DskipTests
-cd ../meditab-fhir-sys-api && mvn clean package -DskipTests
+cd ../fhir-r4-standard-adapter && mvn clean package -DskipTests
+cd ../meditech-fhir-sys-api && mvn clean package -DskipTests
 
 # Process API (federation layer)
 cd ../clinical-federation-prc-api && mvn clean package -DskipTests
@@ -126,14 +146,22 @@ unzip -p target/<app>-1.0.0-mule-application.jar config.properties | grep port
 
 Upload each JAR to Anypoint Runtime Manager. Set `http.port=8081` in Properties. Deploy in order: System APIs → Process API → Experience API. See `DEPLOYMENT_GOVERNANCE.md` for the full checklist.
 
+**MEDITECH OAuth setup:** After deploying `meditech-fhir-sys-api`, seed the OAuth token once:
+1. Complete the MEDITECH Greenfield OAuth browser flow to get a refresh token
+2. Call: `curl -X POST https://<meditech-app>.cloudhub.io/api/v1/meditech/seed-token -H "Content-Type: text/plain" -d "<refresh_token>"`
+3. The app auto-refreshes every 14 minutes from that point on
+
+**CareStack setup:** Set three Protected Properties in Runtime Manager: `CARESTACK_VENDOR_KEY`, `CARESTACK_ACCOUNT_KEY`, `CARESTACK_ACCOUNT_ID`
+
 ### 4. Wire the layers
 
 Each layer's `config.properties` points to the layer below it:
 
 ```properties
 # Process API → System APIs
-sysapi.carestack.host=<system-api-a>.cloudhub.io
-sysapi.meditab.host=<system-api-b>.cloudhub.io
+sysapi.carestack.host=<carestack-system-api>.cloudhub.io
+sysapi.meditab.host=<fhir-adapter>.cloudhub.io
+sysapi.meditech.host=<meditech-system-api>.cloudhub.io
 
 # Experience API → Process API
 prcapi.clinical.host=<process-api>.cloudhub.io
@@ -147,50 +175,34 @@ echo "ANYPOINT_EXPERIENCE_API_URL=https://<experience-api>.cloudhub.io" > .env.l
 vercel --prod
 ```
 
-### 6. Connect your EHRs
+### 6. Add your own EHRs
 
-Point any System API at your FHIR R4 endpoint:
+**FHIR R4 EHR (e.g., Epic, Cerner):** Copy `fhir-r4-standard-adapter`, change the FHIR URL in `config.properties`. Add to Process API scatter-gather. Rebuild and deploy.
 
-```properties
-fhir.server.host=your-ehr-fhir-endpoint.com
-fhir.server.port=443
-fhir.server.protocol=HTTPS
-fhir.server.basePath=/fhir/r4
-```
+**Non-FHIR system:** Copy `carestack-fhir-sys-api` as a template. Write DataWeave transforms for the target API's data model. The contract to the Process API stays the same — FHIR Bundles.
 
-Rebuild, deploy. No changes to Process API, Experience API, or frontend.
+## Compatible EHR Systems
 
-**Add a third facility:** Copy any System API, change the FHIR URL, add it to the Process API scatter-gather. Rebuild. Everything above it works unchanged.
-
-## Compatible FHIR R4 EHR Systems
-
-Any EHR that exposes FHIR R4 endpoints works with this architecture. The System APIs call standard FHIR resources — no vendor-specific code.
-
-| EHR | FHIR R4 Sandbox | Auth | Notes |
-|-----|----------------|------|-------|
-| **Epic** | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | OAuth/SMART | Register via [Epic Showroom](https://fhir.epic.com/). Largest US EHR market share |
-| **Oracle Health (Cerner)** | `fhir-open.cerner.com/r4/{tenant-id}` | Open sandbox available | [Open sandbox docs](https://fhir.cerner.com/millennium/r4/) |
-| **MEDITECH Expanse** | `greenfield.meditech.com/explorer` | OAuth/SMART | [Greenfield Portal](https://greenfield.meditech.com/) — FHIR R4 US Core STU7 |
-| **CareStack** | Customer-provisioned | OAuth | FHIR R4 compliant — no public sandbox |
-| **athenahealth** | Customer-provisioned | OAuth | [Developer portal](https://developer.athenahealth.com/) — FHIR R4 APIs |
-| **Allscripts/Veradigm** | Customer-provisioned | OAuth | FHIR R4 via FHIRPoint |
-| **eClinicalWorks** | Customer-provisioned | OAuth | FHIR R4 compliant |
-| **NextGen Healthcare** | Customer-provisioned | OAuth | FHIR R4 via Mirth |
-| **SMART Health IT** | `r4.smarthealthit.org` | Open | **Used in this demo** — Synthea synthetic patients |
-
-This demo uses the SMART Health IT sandbox (`r4.smarthealthit.org`) — an open FHIR R4 server with synthetic patient data. To connect a production EHR, replace the FHIR URL in the System API's `config.properties`. The System API contract is identical regardless of which EHR is behind it.
-
-## Implementation Notes
-
-Directory names (`carestack-fhir-sys-api`, `meditab-fhir-sys-api`) are artifact identifiers from the reference deployment. User-facing labels ("Flagship Hospital", "Community Clinic") represent the demo scenario. Rename to match your facilities.
+| EHR | Type | Integration Pattern | Notes |
+|-----|------|-------------------|-------|
+| **Epic** | FHIR R4 | `fhir-r4-standard-adapter` | Largest US EHR. [Epic Showroom](https://fhir.epic.com/) |
+| **Oracle Health (Cerner)** | FHIR R4 | `fhir-r4-standard-adapter` | [Open sandbox](https://fhir.cerner.com/millennium/r4/) |
+| **MEDITECH Expanse** | FHIR R4 + OAuth | `meditech-fhir-sys-api` | **Live in this demo.** [Greenfield Portal](https://greenfield.meditech.com/) |
+| **CareStack** | Proprietary REST | `carestack-fhir-sys-api` | **DataWeave transforms built.** 49 endpoints, 92 schemas |
+| **athenahealth** | FHIR R4 | `fhir-r4-standard-adapter` | [Developer portal](https://developer.athenahealth.com/) |
+| **Allscripts/Veradigm** | FHIR R4 | `fhir-r4-standard-adapter` | FHIR R4 via FHIRPoint |
+| **eClinicalWorks** | FHIR R4 | `fhir-r4-standard-adapter` | FHIR R4 compliant |
+| **NextGen Healthcare** | FHIR R4 | `fhir-r4-standard-adapter` | FHIR R4 via Mirth |
+| **SMART Health IT** | FHIR R4 | `fhir-r4-standard-adapter` | **Used in this demo** — Synthea synthetic patients |
 
 ## Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | Integration | MuleSoft Mule 4, CloudHub 2.0 | API-led connectivity, FHIR R4 federation |
-| Standards | FHIR R4, US Core STU7, SMART on FHIR | EHR-agnostic interoperability |
+| Standards | FHIR R4, US Core STU6/STU7, SMART on FHIR | EHR-agnostic interoperability |
 | Terminology | SNOMED CT → ICD-10-CM (DataWeave) | Cross-system code normalization |
 | AI | Claude, Vercel AI Gateway, AI SDK v6 | Natural language clinical queries |
 | Frontend | Next.js, Vercel | Chat UI, Slack bot, streaming responses |
-| Test Data | SMART Health IT Sandbox (Synthea) | Synthetic FHIR patients |
+| Test Data | SMART Health IT Sandbox + MEDITECH Greenfield | Synthetic + real EHR sandbox patients |
+| Observability | Anypoint Visualizer | Auto-discovered API topology |
