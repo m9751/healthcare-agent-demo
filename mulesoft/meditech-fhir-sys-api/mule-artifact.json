@@ -1,5 +1,5 @@
 {
-  "name": "carestack-fhir-sys-api",
+  "name": "meditech-fhir-sys-api",
   "minMuleVersion": "4.11.2",
   "javaSpecificationVersions": [
     "17"
